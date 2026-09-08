@@ -62,3 +62,25 @@ unit:
     when: always
     reports:
       junit: report.xml
+
+integration:
+  extends: .python
+  stage: test
+  services:
+    - name: docker:28-dind
+      alias: docker
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_CERT_PATH: "/certs/client"
+    DOCKER_TLS_VERIFY: 1
+    # testcontainers talks to the dind daemon, and the container it starts is reachable
+    # from this job at the dind host rather than at localhost.
+    TESTCONTAINERS_HOST_OVERRIDE: docker
+    TESTCONTAINERS_RYUK_DISABLED: "true"
+  script:
+    - uv run pytest -m integration --junitxml=report-integration.xml
+  artifacts:
+    when: always
+    reports:
+      junit: report-integration.xml

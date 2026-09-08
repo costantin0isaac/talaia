@@ -2,6 +2,8 @@
 
 from talaia.checks.base import Checker
 from talaia.checks.http import HttpChecker, HttpClients
+from talaia.checks.icmp import IcmpChecker
+from talaia.checks.tcp import TcpChecker
 from talaia.config.schema import MonitorType
 
 
@@ -22,9 +24,11 @@ class CheckerRegistry:
 
 
 def build_registry(clients: HttpClients) -> CheckerRegistry:
-    """Build the registry for this build.
-
-    ICMP and TCP checkers arrive in Phase 2; monitors of those types are not scheduled
-    until then.
-    """
-    return CheckerRegistry({MonitorType.HTTP: HttpChecker(clients)})
+    """Build the registry covering every monitor type."""
+    return CheckerRegistry(
+        {
+            MonitorType.HTTP: HttpChecker(clients),
+            MonitorType.ICMP: IcmpChecker(),
+            MonitorType.TCP: TcpChecker(),
+        }
+    )

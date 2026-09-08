@@ -1,32 +1,18 @@
-# ---------------------------------------------------------------------------------------
-# Talaia CI/CD pipeline.
-#
-# Stages run in order; every job inside a stage runs in parallel; a stage only starts if
-# the previous one fully succeeded. That ordering is the whole safety argument: a broken
-# image can never reach the registry, because `build` sits behind `test`.
-#
-# The full stage list is declared up front to document the intended shape. Stages with no
-# jobs yet are simply skipped by GitLab, so later phases add jobs without reordering.
-# ---------------------------------------------------------------------------------------
 stages:
-  - lint       # Phase 1: style, formatting, secret scanning
-  - typecheck  # Phase 1: mypy --strict
-  - validate   # Phase 1 (feat/config-schema): parse monitors.yaml through the schema
-  - test       # Phase 1: unit, then integration against a real Postgres
-  - build      # Phase 1 (feat/api): build and push the container image
-  - deploy     # Phase 1 (feat/api): manual, main only, on the Docker host
+  - lint
+  - typecheck
+  - validate
+  - test
+  - build
+  - deploy
 
 variables:
-  # Keep uv's download cache inside the build directory so GitLab's cache can pick it up.
   UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
-  # Fail loudly if the lockfile is out of date rather than silently re-resolving.
   UV_FROZEN: "1"
 
-# A reusable block for any job that needs the Python environment.
 .python:
   image: ghcr.io/astral-sh/uv:python3.14-bookworm-slim
   cache:
-    # Keyed on the lockfile: the cache is reused until dependencies actually change.
     key:
       files:
         - uv.lock
@@ -35,18 +21,14 @@ variables:
   before_script:
     - uv sync --frozen --all-groups
   after_script:
-    # Discard cache entries that this job did not use, so the cache cannot grow forever.
     - uv cache prune --ci
 
-# ---------------------------------------------------------------------------------------
-# lint
-# ---------------------------------------------------------------------------------------
 ruff:
   extends: .python
   stage: lint
   script:
-    - uv run ruff check .          # correctness and style rules
-    - uv run ruff format --check . # formatting, without rewriting files in CI
+    - uv run ruff check .
+    - uv run ruff format --check .
 
 gitleaks:
   stage: lint
@@ -54,15 +36,10 @@ gitleaks:
     name: zricethezav/gitleaks:latest
     entrypoint: [""]
   variables:
-    # Secret scanning needs the full history, not the default shallow clone: a secret
-    # committed and then removed is still in the history, and still needs rotating.
-    GIT_DEPTH: 0
+    GIT_DEPTH: 0  # secret scanning needs the full history
   script:
     - gitleaks detect --source . --verbose --redact --no-banner
 
-# ---------------------------------------------------------------------------------------
-# typecheck
-# ---------------------------------------------------------------------------------------
 mypy:
   extends: .python
   stage: typecheck

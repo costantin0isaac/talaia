@@ -7,9 +7,6 @@ requires-python = ">=3.14"
 license = { text = "MIT" }
 authors = [{ name = "Isaac" }]
 
-# The full runtime stack is declared up front because it is fixed by the project
-# specification. Individual modules arrive over the delivery phases, but pinning the
-# dependency set now keeps `uv.lock` — and therefore the CI cache — stable.
 dependencies = [
     "fastapi>=0.141",
     "uvicorn[standard]>=0.38",
@@ -42,9 +39,6 @@ dev = [
     "types-pyyaml>=6.0",
 ]
 
-# --------------------------------------------------------------------------------------
-# Build backend: a src/ layout, so the installed package is what tests import.
-# --------------------------------------------------------------------------------------
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -53,12 +47,8 @@ build-backend = "hatchling.build"
 packages = ["src/talaia"]
 
 [tool.uv]
-# Install the project itself into the environment (editable) so `import talaia` works.
 package = true
 
-# --------------------------------------------------------------------------------------
-# Ruff: linter and formatter in one tool. Replaces black, isort and flake8.
-# --------------------------------------------------------------------------------------
 [tool.ruff]
 target-version = "py314"
 line-length = 100
@@ -69,37 +59,33 @@ select = [
     "E",      # pycodestyle errors
     "W",      # pycodestyle warnings
     "F",      # pyflakes
-    "I",      # isort: import ordering
+    "I",      # isort
     "N",      # pep8-naming
-    "UP",     # pyupgrade: modern syntax for the target Python
-    "B",      # flake8-bugbear: likely bugs
-    "A",      # flake8-builtins: shadowing builtins
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "A",      # flake8-builtins
     "C4",     # flake8-comprehensions
-    "DTZ",    # flake8-datetimez: forbids naive datetimes, which matter for timestamptz
-    "T20",    # flake8-print: no stray print(); this project logs with structlog
+    "DTZ",    # flake8-datetimez
+    "T20",    # flake8-print
     "SIM",    # flake8-simplify
-    "PTH",    # prefer pathlib over os.path
+    "PTH",    # flake8-use-pathlib
     "RUF",    # ruff-specific rules
-    "ASYNC",  # flake8-async: blocking calls inside async functions
-    "D",      # pydocstyle: this codebase is meant to be read
+    "ASYNC",  # flake8-async
+    "D",      # pydocstyle
 ]
 ignore = [
-    "D107",  # missing docstring in __init__ — the class docstring covers it
-    "D203",  # incompatible with D211; D211 is the modern choice
-    "D213",  # incompatible with D212; D212 is the modern choice
+    "D107",  # docstring in __init__
+    "D203",  # conflicts with D211
+    "D213",  # conflicts with D212
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# Tests document themselves through their names; full docstrings there are noise.
 "tests/**" = ["D100", "D101", "D102", "D103", "D104"]
 "migrations/**" = ["D103", "D100", "INP001"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "pep257"
 
-# --------------------------------------------------------------------------------------
-# Mypy: strict from the first commit. Retro-fitting types is far more painful.
-# --------------------------------------------------------------------------------------
 [tool.mypy]
 python_version = "3.14"
 strict = true
@@ -110,13 +96,9 @@ warn_no_return = true
 show_error_codes = true
 
 [[tool.mypy.overrides]]
-# Third-party packages that ship no type information.
 module = ["icmplib.*", "testcontainers.*"]
 ignore_missing_imports = true
 
-# --------------------------------------------------------------------------------------
-# Pytest
-# --------------------------------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

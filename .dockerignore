@@ -1,4 +1,3 @@
-# Keep the build context small and the image free of things it must never contain.
 .git
 .gitignore
 .venv

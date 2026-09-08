@@ -4,6 +4,7 @@ import pytest
 import pytest_asyncio
 from alembic import command
 from alembic.config import Config
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from testcontainers.community.postgres import PostgresContainer
 
@@ -50,3 +51,26 @@ async def session(database_url: str) -> AsyncIterator[AsyncSession]:
             await transaction.rollback()
             await connection.close()
             await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def committed_factory(database_url: str) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    """Yield a session factory whose writes really commit.
+
+    Needed by tests that run components on their own connections, which cannot see data
+    held inside the rolled-back transaction of the ``session`` fixture. Every table is
+    truncated afterwards.
+    """
+    engine = create_engine(database_url)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        yield factory
+    finally:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "TRUNCATE monitors, monitor_states, check_results, incidents, "
+                    "daily_uptime RESTART IDENTITY CASCADE"
+                )
+            )
+        await engine.dispose()

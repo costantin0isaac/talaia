@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from talaia.api.app import create_app
 from talaia.api.dependencies import get_session
+from talaia.config.schema import MonitorType
 from talaia.db import repository as repo
 from talaia.db.models import Monitor, MonitorStatus
 from talaia.settings import Settings
@@ -49,7 +50,7 @@ async def make_monitor(
 ) -> Monitor:
     monitor = Monitor(
         name=name,
-        type="http",
+        type=MonitorType.HTTP,
         target="http://10.0.0.1",
         group_name=group,
         description="an example",
@@ -222,3 +223,45 @@ class TestOpenApi:
         for path, operations in schema["paths"].items():
             if path.startswith("/api/monitors"):
                 assert set(operations) == {"get"}
+
+
+class TestMetrics:
+    async def test_exposes_prometheus_text(self, client: httpx.AsyncClient) -> None:
+        response = await client.get("/metrics")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/plain")
+        assert "talaia_build_info" in response.text
+
+    async def test_reflects_monitor_state_from_the_database(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        monitor = await make_monitor(session, "web", status=MonitorStatus.DOWN)
+        state = await repo.ensure_state(session, monitor.id)
+        state.last_latency_ms = 250
+        state.consecutive_failures = 4
+        await session.flush()
+
+        text = (await client.get("/metrics")).text
+
+        assert 'talaia_check_up{group="services",monitor="web",type="http"} 0.0' in text
+        assert (
+            'talaia_check_duration_seconds{group="services",monitor="web",type="http"} 0.25' in text
+        )
+        assert 'talaia_monitor_consecutive_failures{monitor="web"} 4.0' in text
+        assert 'talaia_monitors_total{status="down"} 1.0' in text
+
+    async def test_inactive_monitors_are_not_exported(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        monitor = await make_monitor(session, "retired")
+        monitor.active = False
+        await session.flush()
+
+        assert "retired" not in (await client.get("/metrics")).text
+
+    async def test_is_not_in_the_openapi_schema(self, client: httpx.AsyncClient) -> None:
+        """The exposition format is not JSON, so it does not belong in the API docs."""
+        schema = (await client.get("/openapi.json")).json()
+
+        assert "/metrics" not in schema["paths"]

@@ -1,0 +1,42 @@
+# Example monitor configuration. Copy to monitors.yaml and edit.
+# Unknown keys are rejected, so a typo fails validation rather than being ignored.
+
+defaults:
+  interval: 60              # seconds between checks; per-monitor override allowed
+  timeout: 10               # seconds; must be strictly less than the interval
+  failure_threshold: 3      # consecutive failures before the state becomes DOWN
+  recovery_threshold: 2     # consecutive successes before the state becomes UP
+
+monitors:
+  # An HTTP endpoint.
+  - name: example-webapp
+    type: http
+    target: http://10.0.0.10:3001
+    group: services
+    description: Example web application
+    http:
+      method: GET
+      expected_status: [200]
+      expected_body: null     # optional substring that must appear in the body
+      follow_redirects: false
+      verify_tls: true
+      headers: {}             # never put a secret here; this file is committed
+
+  # A host that answers ping. Checked more often than the default.
+  - name: example-router
+    type: icmp
+    target: 10.0.0.1
+    group: infra
+    interval: 30
+
+  # An open TCP port.
+  - name: example-ssh
+    type: tcp
+    target: 10.0.0.20:22
+    group: infra
+
+  # Configured but not checked, and reported as paused.
+  - name: example-disabled
+    type: http
+    target: https://example.invalid/health
+    enabled: false

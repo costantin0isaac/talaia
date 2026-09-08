@@ -45,3 +45,20 @@ mypy:
   stage: typecheck
   script:
     - uv run mypy
+
+config:
+  extends: .python
+  stage: validate
+  script:
+    - uv run python -m talaia.config config/monitors.yaml config/monitors.example.yaml
+
+unit:
+  extends: .python
+  stage: test
+  script:
+    - uv run pytest -m "not integration" --cov --cov-report=term --junitxml=report.xml
+  coverage: '/^TOTAL.+?(\d+\%)$/'
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml

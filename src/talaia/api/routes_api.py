@@ -3,7 +3,7 @@
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from talaia import __version__
@@ -12,9 +12,10 @@ from talaia.api.schemas import Health, MonitorList, MonitorRead, MonitorState, S
 from talaia.db import repository as repo
 from talaia.db.models import Monitor, MonitorStatus
 from talaia.db.models import MonitorState as MonitorStateRow
+from talaia.metrics.registry import CONTENT_TYPE, Metrics, MonitorSample
 
 router = APIRouter(prefix="/api", tags=["api"])
-health_router = APIRouter(tags=["health"])
+public_router = APIRouter(tags=["public"])
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -56,7 +57,25 @@ async def summary(session: SessionDep) -> Summary:
     )
 
 
-@health_router.get("/healthz", response_model=Health)
+@public_router.get("/healthz", response_model=Health)
 async def healthz() -> Health:
     """Liveness: the process is running and serving."""
     return Health(status="ok", version=__version__)
+
+
+@public_router.get("/metrics", include_in_schema=False)
+async def metrics(request: Request, session: SessionDep) -> Response:
+    """Expose Prometheus metrics, read from the database at scrape time."""
+    collectors: Metrics = request.app.state.metrics
+    samples = [
+        MonitorSample(
+            name=monitor.name,
+            type=monitor.type.value,
+            group=monitor.group_name,
+            status=state.status,
+            last_latency_ms=state.last_latency_ms,
+            consecutive_failures=state.consecutive_failures,
+        )
+        for monitor, state in await repo.list_states(session)
+    ]
+    return Response(content=collectors.render(samples), media_type=CONTENT_TYPE)

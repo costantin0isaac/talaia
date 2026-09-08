@@ -7,7 +7,7 @@ import httpx
 from fastapi import FastAPI
 
 from talaia import __version__
-from talaia.api.routes_api import health_router, router
+from talaia.api.routes_api import public_router, router
 from talaia.checks.http import HttpClients
 from talaia.checks.registry import build_registry
 from talaia.config.loader import ConfigError
@@ -15,6 +15,7 @@ from talaia.config.reconciler import reconcile_file
 from talaia.db.engine import create_engine, create_session_factory
 from talaia.engine.scheduler import Scheduler
 from talaia.logging import configure_logging, get_logger
+from talaia.metrics.registry import Metrics
 from talaia.settings import Settings, get_settings
 
 log = get_logger(__name__)
@@ -38,11 +39,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine = create_engine(settings.database_url)
     session_factory = create_session_factory(engine)
     clients = _build_clients()
-    scheduler = Scheduler(session_factory, build_registry(clients))
+    metrics = Metrics(version=__version__, commit=settings.commit)
+    scheduler = Scheduler(session_factory, build_registry(clients), recorder=metrics)
 
     app.state.engine = engine
     app.state.session_factory = session_factory
     app.state.scheduler = scheduler
+    app.state.metrics = metrics
 
     if not settings.notifications_enabled:
         log.info("notifications are disabled; no ntfy topic configured")
@@ -79,6 +82,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = resolved
-    app.include_router(health_router)
+    app.state.metrics = Metrics(version=__version__, commit=resolved.commit)
+    app.include_router(public_router)
     app.include_router(router)
     return app

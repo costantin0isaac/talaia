@@ -6,6 +6,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -20,6 +21,14 @@ from talaia.logging import get_logger
 log = get_logger(__name__)
 
 Clock = Callable[[], datetime]
+
+
+class ResultRecorder(Protocol):
+    """Counts completed checks for the metrics endpoint."""
+
+    def record_check(self, monitor: str, *, success: bool) -> None:
+        """Count one check."""
+        ...
 
 
 def utc_now() -> datetime:
@@ -139,11 +148,13 @@ class Scheduler:
         *,
         clock: Clock = utc_now,
         jitter: bool = True,
+        recorder: ResultRecorder | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._registry = registry
         self._clock = clock
         self._jitter = jitter
+        self._recorder = recorder
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._configs: dict[str, MonitorConfig] = {}
         self._stopping = asyncio.Event()
@@ -246,6 +257,8 @@ class Scheduler:
 
         outcome = await checker.check(config)
         checked_at = self._clock()
+        if self._recorder is not None:
+            self._recorder.record_check(config.name, success=outcome.success)
 
         async with self._session_factory() as session, session.begin():
             monitor = await repo.get_monitor_by_name(session, config.name)

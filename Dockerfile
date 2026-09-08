@@ -34,10 +34,13 @@ COPY --chown=talaia:talaia config/ ./config/
 
 RUN chmod +x docker-entrypoint.sh
 
+ARG TALAIA_COMMIT=unknown
+
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    TALAIA_CONFIG_PATH=/app/config/monitors.yaml
+    TALAIA_CONFIG_PATH=/app/config/monitors.yaml \
+    TALAIA_COMMIT=${TALAIA_COMMIT}
 
 USER talaia
 EXPOSE 9999

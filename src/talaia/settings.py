@@ -46,6 +46,10 @@ class Settings(BaseSettings):
         default="http://localhost:9999",
         description="Public base URL of this instance, used for links in notifications.",
     )
+    commit: str = Field(
+        default="unknown",
+        description="Commit this image was built from, reported by talaia_build_info.",
+    )
 
     @field_validator("database_url")
     @classmethod

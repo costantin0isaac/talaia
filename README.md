@@ -201,6 +201,41 @@ They do not overlap, because they alert on different classes of thing. Talaia ke
 short window of raw results (`TALAIA_RETENTION_DAYS`, default 30) plus permanent daily
 rollups; Prometheus owns long-term metric storage.
 
+### Scraping
+
+`GET /metrics` is plain-text Prometheus exposition, unauthenticated, on the same port as
+the application. It is meant for the LAN and should never be published through a reverse
+proxy.
+
+```yaml
+scrape_configs:
+  - job_name: talaia
+    static_configs:
+      - targets: ["talaia-host:9999"]
+```
+
+| Metric | Type | Labels |
+|---|---|---|
+| `talaia_check_up` | gauge | `monitor`, `type`, `group` |
+| `talaia_check_duration_seconds` | gauge | `monitor`, `type`, `group` |
+| `talaia_checks_total` | counter | `monitor`, `result` |
+| `talaia_monitor_consecutive_failures` | gauge | `monitor` |
+| `talaia_monitors_total` | gauge | `status` |
+| `talaia_build_info` | gauge | `version`, `commit` |
+
+`talaia_check_up` is **absent** while a monitor is `unknown` or `paused`, rather than
+reporting a misleading zero. Alerting rules should use `talaia_check_up == 0`, not
+`absent()`.
+
+Per-monitor values are read from the database when Prometheus scrapes, so they cannot
+drift from the real state. `talaia_checks_total` is the exception: it is an in-memory,
+process-lifetime counter, so it resets when Talaia restarts. That is normal and Prometheus
+handles it.
+
+Labels are deliberately limited to `monitor`, `type`, `group`, `result` and `status`. A
+URL, an IP address, an error message or a status code must never become a label — that is
+how a metrics database gets destroyed by cardinality.
+
 ## Development
 
 Requires [uv](https://docs.astral.sh/uv/) and Docker.

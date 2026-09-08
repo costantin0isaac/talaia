@@ -111,6 +111,23 @@ list. Copy it to `.env` for local development; `.env` is git-ignored and must st
 the application refuses to start on a `postgresql://` URL rather than failing confusingly
 at the first query.
 
+## Database and migrations
+
+PostgreSQL only — there is no SQLite fallback. The schema is managed by Alembic from the
+first commit, and migrations are applied on container start, before the server binds, so a
+deploy never leaves the schema behind the code.
+
+```sh
+uv run alembic upgrade head        # apply migrations
+uv run alembic downgrade -1        # step back one
+uv run alembic check               # fail if a model has no matching migration
+uv run alembic revision --autogenerate -m "add something"
+```
+
+Always read a generated migration before committing it. Autogenerate reliably misses
+things: it silently dropped the descending order from the `check_results` index that the
+monitor detail page depends on, and that index had to be written by hand.
+
 ## Prometheus and Grafana
 
 Talaia exposes `/metrics` and expects to sit alongside Prometheus rather than replace it.

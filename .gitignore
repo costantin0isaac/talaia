@@ -1,0 +1,29 @@
+# Project specification, kept out of the public repository.
+TALAIA.md
+
+# Secrets
+.env
+*.env
+!.env.example
+.ansible_vault_pass
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Editors / OS
+*.swp
+.idea/
+.vscode/
+.DS_Store

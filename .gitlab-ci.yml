@@ -1,0 +1,47 @@
+stages:
+  - lint
+  - typecheck
+  - validate
+  - test
+  - build
+  - deploy
+
+variables:
+  UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
+  UV_FROZEN: "1"
+
+.python:
+  image: ghcr.io/astral-sh/uv:python3.14-bookworm-slim
+  cache:
+    key:
+      files:
+        - uv.lock
+    paths:
+      - .uv-cache
+  before_script:
+    - uv sync --frozen --all-groups
+  after_script:
+    - uv cache prune --ci
+
+ruff:
+  extends: .python
+  stage: lint
+  script:
+    - uv run ruff check .
+    - uv run ruff format --check .
+
+gitleaks:
+  stage: lint
+  image:
+    name: zricethezav/gitleaks:latest
+    entrypoint: [""]
+  variables:
+    GIT_DEPTH: 0  # secret scanning needs the full history
+  script:
+    - gitleaks detect --source . --verbose --redact --no-banner
+
+mypy:
+  extends: .python
+  stage: typecheck
+  script:
+    - uv run mypy

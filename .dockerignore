@@ -1,0 +1,17 @@
+# Keep the build context small and the image free of things it must never contain.
+.git
+.gitignore
+.venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.coverage
+htmlcov
+tests
+*.md
+.env
+*.env
+compose.*.yaml
+.gitlab-ci.yml

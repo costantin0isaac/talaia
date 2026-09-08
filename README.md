@@ -154,6 +154,39 @@ Always read a generated migration before committing it. Autogenerate reliably mi
 things: it silently dropped the descending order from the `check_results` index that the
 monitor detail page depends on, and that index had to be written by hand.
 
+## Troubleshooting
+
+### Every ICMP check fails with a permission error
+
+This is the most common stumbling block, and it is not a bug in Talaia.
+
+ICMP checks use **unprivileged** datagram sockets, so the container does not need
+`CAP_NET_RAW`. In exchange, the *host* kernel must allow the container's group ID range to
+open ping sockets:
+
+```yaml
+services:
+  app:
+    sysctls:
+      net.ipv4.ping_group_range: "0 2147483647"
+```
+
+Both compose files set this. Without it, every `type: icmp` monitor reports
+`ping socket permission denied` while HTTP and TCP monitors work normally.
+
+To confirm the host allows it:
+
+```sh
+docker compose -f compose.dev.yaml exec app sh -c 'cat /proc/sys/net/ipv4/ping_group_range'
+```
+
+### A monitor is stuck in `unknown`
+
+`unknown` means no threshold has been crossed yet. With the default
+`failure_threshold: 3` and a 60-second interval, a monitor that is down from startup takes
+three minutes to report `down`. That is deliberate: it is what stops a single blip from
+raising an alarm.
+
 ## Prometheus and Grafana
 
 Talaia exposes `/metrics` and expects to sit alongside Prometheus rather than replace it.
@@ -186,6 +219,12 @@ uv run pytest -m "not integration"   # fast inner loop, no Docker needed
 The interpreter is Python 3.14, managed by uv — the system Python is not used. Integration
 tests start a real PostgreSQL container through testcontainers, so the Docker daemon must be
 reachable.
+
+**Known gap in the test suite:** the ICMP checker's tests cover how icmplib's results and
+errors are turned into check outcomes, but never send a real ping. Whether a ping succeeds
+depends on kernel and container settings that cannot be relied on in CI, and faking it
+would prove nothing. The HTTP and TCP checkers are tested against a mocked transport and a
+real local socket respectively.
 
 Run the same three commands CI runs before pushing, and the pipeline will rarely surprise
 you.

@@ -111,6 +111,32 @@ list. Copy it to `.env` for local development; `.env` is git-ignored and must st
 the application refuses to start on a `postgresql://` URL rather than failing confusingly
 at the first query.
 
+## Running it
+
+```sh
+cp .env.example .env          # only needed for local tooling; compose sets its own values
+docker compose -f compose.dev.yaml up --build
+```
+
+The API is then on <http://localhost:9999>:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /healthz` | liveness |
+| `GET /api/monitors` | every active monitor with its current state |
+| `GET /api/summary` | counts by status, open incidents, uptime over 24h |
+| `GET /docs` | generated OpenAPI documentation |
+
+Migrations are applied by the container entrypoint before the server binds, so a deploy
+never leaves the schema behind the code.
+
+Configuration is read from `config/monitors.yaml`, which the dev compose file mounts
+read-only. Editing it takes effect on the next restart; `POST /api/reload` arrives in
+Phase 2.
+
+**One worker only.** Each uvicorn worker would run its own scheduler and duplicate every
+check. This is enforced in `__main__.py` and noted in the Dockerfile.
+
 ## Database and migrations
 
 PostgreSQL only — there is no SQLite fallback. The schema is managed by Alembic from the

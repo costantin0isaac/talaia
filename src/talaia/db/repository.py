@@ -130,6 +130,20 @@ async def uptime_ratio(session: AsyncSession, monitor_id: int, *, since: datetim
     return float(successful) / float(total)
 
 
+async def overall_uptime_ratio(session: AsyncSession, *, since: datetime) -> float | None:
+    """Return the fraction of successful checks across all active monitors."""
+    statement = (
+        select(func.count(), func.count().filter(CheckResult.success.is_(True)))
+        .select_from(CheckResult)
+        .join(Monitor, Monitor.id == CheckResult.monitor_id)
+        .where(CheckResult.checked_at >= since, Monitor.active.is_(True))
+    )
+    total, successful = (await session.execute(statement)).one()
+    if not total:
+        return None
+    return float(successful) / float(total)
+
+
 async def open_incident(
     session: AsyncSession, *, monitor_id: int, started_at: datetime, cause: str
 ) -> Incident:

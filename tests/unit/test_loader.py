@@ -48,14 +48,16 @@ class TestLoadConfig:
         with pytest.raises(ConfigError, match="mapping at the top level"):
             load_config(write(tmp_path, "- name: web\n"))
 
-    def test_unreadable_file(self, tmp_path: Path) -> None:
+    def test_unreadable_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         path = write(tmp_path, VALID)
-        path.chmod(0o000)
-        try:
-            with pytest.raises(ConfigError, match="could not read"):
-                load_config(path)
-        finally:
-            path.chmod(0o644)
+
+        def deny(*args: object, **kwargs: object) -> str:
+            raise PermissionError(13, "Permission denied")
+
+        monkeypatch.setattr(Path, "read_text", deny)
+
+        with pytest.raises(ConfigError, match="could not read"):
+            load_config(path)
 
     def test_schema_violation_names_the_field(self, tmp_path: Path) -> None:
         bad = "monitors:\n  - name: web\n    type: http\n    target: not-a-url\n"

@@ -10,6 +10,7 @@ __pycache__
 htmlcov
 tests
 *.md
+!README.md
 .env
 *.env
 compose.*.yaml

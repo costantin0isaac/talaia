@@ -1,0 +1,44 @@
+name: talaia-dev
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      TALAIA_DATABASE_URL: postgresql+asyncpg://talaia:changeme@db:5432/talaia
+      TALAIA_CONFIG_PATH: /app/config/monitors.yaml
+      TALAIA_LOG_FORMAT: console
+      TALAIA_LOG_LEVEL: DEBUG
+    ports:
+      - "9999:9999"
+    volumes:
+      - ./config:/app/config:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    # Unprivileged ICMP needs the kernel to allow this GID range to open ping sockets.
+    # Without it every ICMP check fails with a permission error (Phase 2).
+    sysctls:
+      net.ipv4.ping_group_range: "0 2147483647"
+    restart: unless-stopped
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: talaia
+      POSTGRES_PASSWORD: changeme
+      POSTGRES_DB: talaia
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U talaia -d talaia"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

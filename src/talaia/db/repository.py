@@ -225,6 +225,22 @@ async def list_incidents(
     return (await session.scalars(statement)).all()
 
 
+async def list_incidents_with_monitor(
+    session: AsyncSession, *, open_only: bool = False, limit: int = 50
+) -> Sequence[tuple[Incident, str]]:
+    """Return incidents across all monitors, newest first, each with its monitor's name."""
+    statement = (
+        select(Incident, Monitor.name)
+        .join(Monitor, Monitor.id == Incident.monitor_id)
+        .order_by(Incident.started_at.desc())
+        .limit(limit)
+    )
+    if open_only:
+        statement = statement.where(Incident.resolved_at.is_(None))
+    rows = (await session.execute(statement)).all()
+    return [(incident, name) for incident, name in rows]
+
+
 async def count_open_incidents(session: AsyncSession) -> int:
     """Return how many incidents are currently unresolved."""
     statement = (

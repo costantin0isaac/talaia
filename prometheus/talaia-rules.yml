@@ -1,0 +1,131 @@
+# Example Prometheus alerting rules for Talaia.
+#
+# These deliberately do NOT alert on "a monitor is down": Talaia already sends that itself,
+# immediately, with incident context. Duplicating it here would give you two notifications
+# for one event and train you to ignore both.
+#
+# What is here instead is everything Talaia cannot tell you about:
+#   - Talaia itself being down, wedged or silent, when it has no voice left to report with
+#   - trends over a window, which are a different question from a state change
+#
+# Load with:
+#   rule_files:
+#     - talaia-rules.yml
+#
+# Check before reloading:
+#   promtool check rules talaia-rules.yml
+
+groups:
+  # ---------------------------------------------------------------------------------
+  # Who watches the watchman. Nothing in this group can be reported by Talaia, because
+  # in every one of these cases Talaia is the thing that is broken.
+  # ---------------------------------------------------------------------------------
+  - name: talaia-liveness
+    rules:
+      - alert: TalaiaDown
+        expr: up{job="talaia"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Talaia is not being scraped"
+          description: >-
+            Prometheus cannot reach Talaia's /metrics endpoint. While this is true no
+            monitor is being checked and no down-notification can be sent, so treat it as
+            an outage of the monitoring itself rather than of one service.
+
+      - alert: TalaiaSchedulerStalled
+        expr: sum(rate(talaia_checks_total[10m])) == 0 and on() up{job="talaia"} == 1
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Talaia is serving but performing no checks"
+          description: >-
+            The process answers scrapes, so /healthz would look fine, but no check has
+            completed in 10 minutes. Every monitor is frozen at its last known state and
+            nothing will ever transition, so no notification will ever fire. This is the
+            silent failure that a liveness probe cannot see.
+
+      - alert: TalaiaMonitorStuckUnknown
+        expr: talaia_monitors_total{status="unknown"} > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} monitor(s) have never produced a result"
+          description: >-
+            A monitor sits in "unknown" until its first check completes. Half an hour in,
+            that usually means its checker is missing, its type is unsupported by this
+            build, or its task died on startup.
+
+  # ---------------------------------------------------------------------------------
+  # Trends. Talaia reports transitions; these report the shape of the last N days, which
+  # is a question no single state change can answer.
+  # ---------------------------------------------------------------------------------
+  - name: talaia-trends
+    rules:
+      - alert: TalaiaUptimeBelowTarget
+        expr: avg_over_time(talaia_check_up[7d]) < 0.99
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.monitor }} is below 99% over 7 days"
+          description: >-
+            {{ $labels.monitor }} ({{ $labels.group }}) averaged
+            {{ $value | humanizePercentage }} availability this week. It may be up right
+            now -- this fires on the accumulation of short outages that each recovered
+            before they were worth worrying about individually.
+
+      - alert: TalaiaFlapping
+        expr: changes(talaia_check_up[1h]) > 6
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.monitor }} is flapping"
+          description: >-
+            {{ $labels.monitor }} changed state {{ $value }} times in an hour. Each
+            transition sent you a notification, so this is also the rule that explains why
+            your phone will not stop. Consider raising its failure_threshold.
+
+      - alert: TalaiaLatencyElevated
+        expr: |
+          talaia_check_duration_seconds
+            > 3 * avg_over_time(talaia_check_duration_seconds[7d])
+            and talaia_check_duration_seconds > 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.monitor }} is three times slower than usual"
+          description: >-
+            {{ $labels.monitor }} is responding in {{ $value | humanizeDuration }},
+            against a weekly average a third of that. The check still succeeds, so Talaia
+            will not notify about it -- degradation short of failure is exactly what this
+            half of the split is for.
+
+      - alert: TalaiaCertificateExpiringSoon
+        expr: talaia_certificate_days_remaining < 21
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.monitor }} certificate expires in {{ $value }} days"
+          description: >-
+            Fires earlier than Talaia's own tls.warn_days (default 14) so there is a quiet
+            warning before the monitor starts failing and paging you. Raise warn_days
+            above this threshold and you will get the noisy signal first, which is
+            backwards.
+
+      - alert: TalaiaCertificateExpired
+        expr: talaia_certificate_days_remaining < 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.monitor }} certificate has expired"
+          description: >-
+            The value is negative, meaning expiry was {{ $value }} days ago. Anything
+            verifying this certificate is already failing.

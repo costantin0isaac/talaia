@@ -52,6 +52,16 @@ config:
   script:
     - uv run python -m talaia.config config/monitors.yaml config/monitors.example.yaml
 
+# The committed alerting rules are data, like monitors.yaml: parse them in CI rather than
+# discovering a typo when Prometheus refuses to reload.
+rules:
+  stage: validate
+  image:
+    name: prom/prometheus:latest
+    entrypoint: [""]
+  script:
+    - promtool check rules prometheus/talaia-rules.yml
+
 unit:
   extends: .python
   stage: test

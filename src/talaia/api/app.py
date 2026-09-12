@@ -4,10 +4,15 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response, status
+from fastapi.exception_handlers import http_exception_handler
+from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from talaia import __version__
 from talaia.api.routes_api import public_router, router
+from talaia.api.routes_web import STATIC_DIR, not_found, wants_html
+from talaia.api.routes_web import router as web_router
 from talaia.checks.http import HttpClients
 from talaia.checks.registry import build_registry
 from talaia.config.loader import ConfigError
@@ -105,6 +110,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = resolved
     app.state.metrics = Metrics(version=__version__, commit=resolved.commit)
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(public_router)
     app.include_router(router)
+    app.include_router(web_router)
+
+    @app.exception_handler(StarletteHTTPException)
+    async def handle_http_exception(request: Request, exc: StarletteHTTPException) -> Response:
+        """Render UI failures as pages and API failures as JSON."""
+        if exc.status_code == status.HTTP_404_NOT_FOUND and wants_html(request):
+            return await not_found(request, exc)
+        return await http_exception_handler(request, exc)
+
     return app

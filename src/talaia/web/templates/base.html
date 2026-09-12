@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Talaia{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/htmx.min.js" defer></script>
+</head>
+<body>
+  <header class="masthead">
+    <a class="brand" href="/">
+      <span class="brand-mark" aria-hidden="true">◎</span>
+      <span class="brand-name">Talaia</span>
+    </a>
+    <nav class="masthead-links">
+      <a href="/docs">API</a>
+      <a href="/metrics">Metrics</a>
+    </nav>
+  </header>
+
+  <main class="page">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    Configuration lives in <code>monitors.yaml</code>, not here.
+  </footer>
+</body>
+</html>

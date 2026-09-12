@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% set row = detail.row %}
+
+{% block title %}{{ row.name }} — Talaia{% endblock %}
+
+{% block content %}
+<nav class="breadcrumb"><a href="/">Dashboard</a> <span>/</span> <span>{{ row.name }}</span></nav>
+
+<header class="detail-head">
+  <h1>
+    <span class="dot dot-{{ row.status }}"></span>
+    {{ row.name }}
+    <span class="badge">{{ row.type }}</span>
+    {% if not detail.enabled %}<span class="badge badge-muted">disabled</span>{% endif %}
+    {% if not detail.active %}<span class="badge badge-muted">removed from YAML</span>{% endif %}
+  </h1>
+  {% if detail.description %}<p class="detail-description">{{ detail.description }}</p>{% endif %}
+  <p class="detail-target"><code>{{ row.target }}</code></p>
+</header>
+
+<section class="uptimes">
+  <div class="stat"><span class="stat-value">{{ row.uptime_24h }}</span><span class="stat-label">24 hours</span></div>
+  <div class="stat"><span class="stat-value">{{ detail.uptime_7d }}</span><span class="stat-label">7 days</span></div>
+  <div class="stat"><span class="stat-value">{{ detail.uptime_30d }}</span><span class="stat-label">30 days</span></div>
+  <div class="stat"><span class="stat-value">{{ row.last_latency }}</span><span class="stat-label">last latency</span></div>
+</section>
+
+<section class="panel">
+  <h2>Recent checks</h2>
+  {% include "partials/strip.html" %}
+  <p class="muted">Last checked {{ row.last_checked }}.</p>
+  {% if row.last_error %}<p class="error-box">{{ row.last_error }}</p>{% endif %}
+</section>
+
+<section class="panel">
+  <h2>Latency, last {{ chart_hours }}h</h2>
+  {% if detail.chart.has_data %}
+  <svg class="chart" viewBox="0 0 {{ detail.chart.width }} {{ detail.chart.height }}"
+       role="img" aria-label="latency over the last {{ chart_hours }} hours"
+       preserveAspectRatio="none">
+    <line class="chart-axis" x1="0" y1="{{ detail.chart.height - 8 }}"
+          x2="{{ detail.chart.width }}" y2="{{ detail.chart.height - 8 }}"></line>
+    {% for x in detail.chart.failures %}
+      <line class="chart-failure" x1="{{ x }}" y1="8" x2="{{ x }}" y2="{{ detail.chart.height - 8 }}"></line>
+    {% endfor %}
+    {% if detail.chart.polyline %}
+      <polyline class="chart-line" points="{{ detail.chart.polyline }}"></polyline>
+    {% endif %}
+    {% for point in detail.chart.points %}
+      <circle class="chart-point" cx="{{ point.x }}" cy="{{ point.y }}" r="1.6">
+        <title>{{ point.label }}</title>
+      </circle>
+    {% endfor %}
+  </svg>
+  <p class="muted">
+    Peak {{ detail.chart.max_latency }} ms over {{ detail.chart.sample_count }} checks.
+    Red lines are failed checks.
+  </p>
+  {% else %}
+  <p class="muted">No checks recorded in this window yet.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Configuration</h2>
+  <dl class="config">
+    <dt>Group</dt><dd>{{ detail.group or "—" }}</dd>
+    <dt>Interval</dt><dd>{{ detail.interval_seconds }}s</dd>
+    <dt>Timeout</dt><dd>{{ detail.timeout_seconds }}s</dd>
+    <dt>Failure threshold</dt><dd>{{ detail.failure_threshold }}</dd>
+    <dt>Recovery threshold</dt><dd>{{ detail.recovery_threshold }}</dd>
+  </dl>
+</section>
+
+<section class="panel">
+  <h2>Incidents</h2>
+  {% if detail.incidents %}
+  <table class="incidents">
+    <thead>
+      <tr><th>Started</th><th>Resolved</th><th>Duration</th><th>Cause</th></tr>
+    </thead>
+    <tbody>
+      {% for incident in detail.incidents %}
+      <tr {% if incident.ongoing %}class="ongoing"{% endif %}>
+        <td>{{ incident.started_at }}</td>
+        <td>{{ incident.resolved_at }}</td>
+        <td>{{ incident.duration }}{% if incident.ongoing %} and counting{% endif %}</td>
+        <td>{{ incident.cause }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No incidents recorded.</p>
+  {% endif %}
+</section>
+{% endblock %}

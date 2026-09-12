@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block title %}Not found — Talaia{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <h2>Not found</h2>
+  <p>{{ detail }}</p>
+  <p class="muted">
+    Monitors come from <code>monitors.yaml</code>; one that is not there is not here either.
+    <a href="/">Back to the dashboard</a>.
+  </p>
+</section>
+{% endblock %}

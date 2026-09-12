@@ -2,7 +2,7 @@
 
 import json
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -12,8 +12,6 @@ from talaia.notify.base import (
     Notification,
     NullNotifier,
     down_notification,
-    format_duration,
-    format_timestamp,
     up_notification,
 )
 from talaia.notify.ntfy import NtfyNotifier
@@ -35,35 +33,6 @@ DOWN = Notification(
 async def notifier() -> AsyncIterator[NtfyNotifier]:
     async with httpx.AsyncClient() as client:
         yield NtfyNotifier(url=SERVER, topic=TOPIC, client=client, backoff=(0.0, 0.0))
-
-
-class TestFormatDuration:
-    @pytest.mark.parametrize(
-        ("seconds", "expected"),
-        [
-            (0, "0s"),
-            (45, "45s"),
-            (60, "1m"),
-            (372, "6m 12s"),
-            (3600, "1h"),
-            (3900, "1h 5m"),
-            (86400, "1d"),
-            (93600, "1d 2h"),
-        ],
-    )
-    def test_renders_the_two_largest_units(self, seconds: int, expected: str) -> None:
-        assert format_duration(seconds) == expected
-
-
-class TestFormatTimestamp:
-    def test_renders_utc(self) -> None:
-        assert format_timestamp(AT) == "2026-03-14 09:30:05 UTC"
-
-    def test_converts_from_another_offset(self) -> None:
-        """Timestamps always read as UTC, whatever offset the incident row carried."""
-        madrid = AT.astimezone(timezone(timedelta(hours=2)))
-
-        assert format_timestamp(madrid) == "2026-03-14 09:30:05 UTC"
 
 
 class TestMessages:

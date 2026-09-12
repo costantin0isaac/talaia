@@ -1,0 +1,37 @@
+<section id="summary" class="summary"
+         hx-get="/partials/summary"
+         hx-trigger="every {{ poll_seconds }}s"
+         hx-swap="outerHTML">
+  <div class="stat">
+    <span class="stat-value">{{ summary.total }}</span>
+    <span class="stat-label">monitors</span>
+  </div>
+  <div class="stat stat-up">
+    <span class="stat-value">{{ summary.up }}</span>
+    <span class="stat-label">up</span>
+  </div>
+  <div class="stat stat-down">
+    <span class="stat-value">{{ summary.down }}</span>
+    <span class="stat-label">down</span>
+  </div>
+  {% if summary.unknown %}
+  <div class="stat stat-unknown">
+    <span class="stat-value">{{ summary.unknown }}</span>
+    <span class="stat-label">unknown</span>
+  </div>
+  {% endif %}
+  {% if summary.paused %}
+  <div class="stat stat-paused">
+    <span class="stat-value">{{ summary.paused }}</span>
+    <span class="stat-label">paused</span>
+  </div>
+  {% endif %}
+  <div class="stat">
+    <span class="stat-value">{{ summary.uptime_24h }}</span>
+    <span class="stat-label">uptime 24h</span>
+  </div>
+  <div class="stat {% if summary.open_incidents %}stat-down{% endif %}">
+    <span class="stat-value">{{ summary.open_incidents }}</span>
+    <span class="stat-label">open incidents</span>
+  </div>
+</section>

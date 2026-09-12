@@ -45,12 +45,12 @@ starts empty.
 
 ## Project status
 
-Under active development, delivered in phases. **Phase 1 is in progress.**
+Under active development, delivered in phases. **Phase 2 is in progress.**
 
 | Phase | Contents | Status |
 |---|---|---|
-| 1 | Scaffolding, settings, logging, database, config schema, HTTP checker, scheduler, JSON API | in progress |
-| 2 | ICMP and TCP checkers, Prometheus metrics, ntfy notifications, retention, `/api/reload` | planned |
+| 1 | Scaffolding, settings, logging, database, config schema, HTTP checker, scheduler, JSON API | done |
+| 2 | ICMP and TCP checkers, Prometheus metrics, ntfy notifications, retention, `/api/reload` | in progress |
 | 3 | Web dashboard and monitor detail pages | planned |
 | 4 | Session authentication, TLS expiry checks, Grafana dashboard, alerting rules | planned |
 
@@ -175,6 +175,60 @@ large backlog does not hold a lock for minutes.
 | `monitors` | permanent, soft-deleted when removed from the YAML |
 
 Days are UTC, matching Prometheus and the log timestamps.
+
+## Notifications
+
+### What Talaia notifies about, and what Grafana notifies about
+
+These overlap in people's heads but not in practice, and it is worth being explicit:
+
+- **Talaia notifies about state changes.** "web is DOWN", "web recovered after 6m". Event
+  driven, immediate, and carrying the incident's own context.
+- **Grafana and Alertmanager notify about trends.** "uptime below 99% this week", "p95
+  latency elevated for 15 minutes". Window based, expressed in PromQL over `/metrics`.
+
+A state change is a fact Talaia already owns; a trend is a question asked of the metrics.
+Neither tool is a good substitute for the other, so run both.
+
+### ntfy
+
+Set three variables and notifications turn themselves on:
+
+```sh
+TALAIA_NTFY_URL=https://ntfy.example.org
+TALAIA_NTFY_TOPIC=talaia-alerts
+TALAIA_NTFY_TOKEN=tk_...          # optional, for a topic with access control
+```
+
+Leave `TALAIA_NTFY_TOPIC` empty and the application logs that notifications are disabled,
+once, at startup, and runs normally. There is no other way to disable them.
+
+`TALAIA_BASE_URL` is used for the `click` link on each message, so tapping a notification
+opens that monitor's page.
+
+Two messages per incident:
+
+| Event | Title | Body | Priority |
+|---|---|---|---|
+| Down | 🔴 `<name>` is DOWN | target, error, timestamp | high |
+| Up | 🟢 `<name>` recovered | downtime duration, timestamp | default |
+
+### Why an outage produces exactly two messages
+
+Notifications are tied to state *transitions*, not to failed checks, so a service that is
+down for six hours produces one "down" message and one "recovered" message — not one per
+failed check, and not a repeating reminder. There is no cooldown to configure because there
+is nothing to suppress.
+
+Delivery is fire-and-forget on a background task, retried twice with a short backoff, and a
+failure is logged and dropped. **A notification can never delay or fail a check.** The cost
+of that choice is that an unreachable ntfy server means a lost message rather than a delayed
+one, which is the right trade for a monitor: the checking must not stop because the
+announcing broke.
+
+Before sending, Talaia stamps `notified_down_at` / `notified_up_at` on the incident row in a
+single conditional `UPDATE`. Whoever wins the stamp sends the message, so the same event is
+never announced twice even if the announcement is attempted again after a restart.
 
 ## Troubleshooting
 

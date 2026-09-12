@@ -17,11 +17,22 @@ from talaia.engine.retention import RetentionTask
 from talaia.engine.scheduler import Scheduler
 from talaia.logging import configure_logging, get_logger
 from talaia.metrics.registry import Metrics
+from talaia.notify.base import Notifier, NullNotifier
+from talaia.notify.ntfy import NtfyNotifier
 from talaia.settings import Settings, get_settings
 
 log = get_logger(__name__)
 
 CONNECTION_LIMITS = httpx.Limits(max_connections=50, max_keepalive_connections=20)
+
+
+def _build_notifier(settings: Settings) -> Notifier:
+    """Return the ntfy notifier, or one that discards everything if no topic is set."""
+    url, topic = settings.ntfy_url, settings.ntfy_topic
+    if not url or not topic:
+        log.info("notifications are disabled; no ntfy topic configured")
+        return NullNotifier()
+    return NtfyNotifier(url=url, topic=topic, token=settings.ntfy_token)
 
 
 def _build_clients() -> HttpClients:
@@ -41,7 +52,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     session_factory = create_session_factory(engine)
     clients = _build_clients()
     metrics = Metrics(version=__version__, commit=settings.commit)
-    scheduler = Scheduler(session_factory, build_registry(clients), recorder=metrics)
+    notifier = _build_notifier(settings)
+    scheduler = Scheduler(
+        session_factory,
+        build_registry(clients),
+        recorder=metrics,
+        notifier=notifier,
+        base_url=settings.base_url,
+    )
     retention = RetentionTask(session_factory, retention_days=settings.retention_days)
 
     app.state.engine = engine
@@ -49,9 +67,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.scheduler = scheduler
     app.state.retention = retention
     app.state.metrics = metrics
-
-    if not settings.notifications_enabled:
-        log.info("notifications are disabled; no ntfy topic configured")
+    app.state.notifier = notifier
 
     async with session_factory() as session, session.begin():
         try:
@@ -69,6 +85,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         await retention.stop()
         await scheduler.stop()
+        await notifier.aclose()
         await clients.verifying.aclose()
         await clients.insecure.aclose()
         await engine.dispose()

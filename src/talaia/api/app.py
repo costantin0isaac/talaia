@@ -4,19 +4,22 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, Request, Response, status
+from fastapi import Depends, FastAPI, Request, Response, status
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from talaia import __version__
+from talaia.api.dependencies import require_user
 from talaia.api.routes_api import public_router, router
-from talaia.api.routes_web import STATIC_DIR, not_found, wants_html
+from talaia.api.routes_auth import router as auth_router
+from talaia.api.routes_web import not_found, unauthenticated, wants_html
 from talaia.api.routes_web import router as web_router
 from talaia.checks.http import HttpClients
 from talaia.checks.registry import build_registry
 from talaia.config.loader import ConfigError
 from talaia.config.reconciler import reconcile_file
+from talaia.db import repository as repo
 from talaia.db.engine import create_engine, create_session_factory
 from talaia.engine.retention import RetentionTask
 from talaia.engine.scheduler import Scheduler
@@ -25,6 +28,7 @@ from talaia.metrics.registry import Metrics
 from talaia.notify.base import Notifier, NullNotifier
 from talaia.notify.ntfy import NtfyNotifier
 from talaia.settings import Settings, get_settings
+from talaia.web.templates_env import STATIC_DIR
 
 log = get_logger(__name__)
 
@@ -81,6 +85,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             log.exception("configuration is invalid; keeping what is already in the database")
             raise
 
+        if not await repo.count_users(session):
+            log.warning(
+                "no users exist; nobody can sign in. "
+                "Create one with: python -m talaia.auth add <username>"
+            )
+
     await scheduler.start()
     await retention.start()
     log.info("talaia started", version=__version__, monitors=len(scheduler.running_monitors))
@@ -111,13 +121,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = resolved
     app.state.metrics = Metrics(version=__version__, commit=resolved.commit)
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+    # Unauthenticated by design: the probes and /metrics are scraped by machines, and the
+    # login routes are how anyone gets a session in the first place.
     app.include_router(public_router)
-    app.include_router(router)
-    app.include_router(web_router)
+    app.include_router(auth_router)
+
+    guarded = [Depends(require_user)]
+    app.include_router(router, dependencies=guarded)
+    app.include_router(web_router, dependencies=guarded)
 
     @app.exception_handler(StarletteHTTPException)
     async def handle_http_exception(request: Request, exc: StarletteHTTPException) -> Response:
         """Render UI failures as pages and API failures as JSON."""
+        if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+            return unauthenticated(request, exc)
         if exc.status_code == status.HTTP_404_NOT_FOUND and wants_html(request):
             return await not_found(request, exc)
         return await http_exception_handler(request, exc)

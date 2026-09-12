@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from datetime import date, datetime
 from typing import Any, Literal, cast
 
-from sqlalchemy import CursorResult, delete, func, select, update
+from sqlalchemy import CursorResult, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, aliased
@@ -19,6 +19,8 @@ from talaia.db.models import (
     Monitor,
     MonitorState,
     MonitorStatus,
+    Session,
+    User,
 )
 
 NotificationKind = Literal["down", "up"]
@@ -385,4 +387,102 @@ async def deactivate_missing_monitors(session: AsyncSession, keep_names: Sequenc
         .values(active=False)
     )
     result = cast(CursorResult[Any], await session.execute(statement))
+    return result.rowcount
+
+
+async def get_user_by_name(session: AsyncSession, username: str) -> User | None:
+    """Return the user with this username, active or not."""
+    user: User | None = await session.scalar(select(User).where(User.username == username))
+    return user
+
+
+async def list_users(session: AsyncSession) -> Sequence[User]:
+    """Return every user, by name."""
+    return (await session.scalars(select(User).order_by(User.username))).all()
+
+
+async def count_users(session: AsyncSession) -> int:
+    """Return how many users exist, so startup can warn when nobody can log in."""
+    return (await session.execute(select(func.count()).select_from(User))).scalar_one()
+
+
+async def create_user(session: AsyncSession, *, username: str, password_hash: str) -> User:
+    """Insert a user."""
+    user = User(username=username, password_hash=password_hash, active=True)
+    session.add(user)
+    await session.flush()
+    return user
+
+
+async def create_session(
+    session: AsyncSession, *, token_hash: str, user_id: int, expires_at: datetime
+) -> Session:
+    """Record a login."""
+    row = Session(token_hash=token_hash, user_id=user_id, expires_at=expires_at)
+    session.add(row)
+    await session.flush()
+    return row
+
+
+async def get_session_user(session: AsyncSession, token_hash: str, *, now: datetime) -> User | None:
+    """Return the active user behind an unexpired session token.
+
+    Expiry and the user's active flag are part of the lookup, so a disabled account or a
+    stale token cannot authenticate however the caller behaves.
+    """
+    statement = (
+        select(User)
+        .join(Session, Session.user_id == User.id)
+        .where(
+            Session.token_hash == token_hash,
+            Session.expires_at > now,
+            User.active.is_(True),
+        )
+    )
+    user: User | None = await session.scalar(statement)
+    return user
+
+
+async def touch_session(
+    session: AsyncSession, token_hash: str, *, now: datetime, not_before: datetime
+) -> bool:
+    """Record that a session was used, at most once per interval.
+
+    The dashboard polls a partial per monitor every 15 seconds, so an unconditional write
+    here would turn every page view into a burst of writes for one informational column.
+    """
+    result = cast(
+        CursorResult[Any],
+        await session.execute(
+            update(Session)
+            .where(
+                Session.token_hash == token_hash,
+                or_(Session.last_seen_at.is_(None), Session.last_seen_at < not_before),
+            )
+            .values(last_seen_at=now)
+        ),
+    )
+    return result.rowcount > 0
+
+
+async def delete_session(session: AsyncSession, token_hash: str) -> None:
+    """Forget one session, on logout."""
+    await session.execute(delete(Session).where(Session.token_hash == token_hash))
+
+
+async def delete_sessions_for_user(session: AsyncSession, user_id: int) -> int:
+    """Forget every session of one user, used when their password changes."""
+    result = cast(
+        CursorResult[Any],
+        await session.execute(delete(Session).where(Session.user_id == user_id)),
+    )
+    return result.rowcount
+
+
+async def delete_expired_sessions(session: AsyncSession, *, now: datetime) -> int:
+    """Drop sessions that can no longer authenticate anyone."""
+    result = cast(
+        CursorResult[Any],
+        await session.execute(delete(Session).where(Session.expires_at <= now)),
+    )
     return result.rowcount

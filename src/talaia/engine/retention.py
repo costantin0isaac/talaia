@@ -37,6 +37,7 @@ class MaintenanceReport:
     days_rolled_up: tuple[date, ...]
     rows_written: int
     results_deleted: int
+    sessions_deleted: int = 0
 
 
 class RetentionTask:
@@ -91,17 +92,27 @@ class RetentionTask:
             rows_written += await self._roll_up(day)
 
         deleted = await self._prune(now - timedelta(days=self._retention_days))
+        sessions = await self._prune_sessions(now)
 
         report = MaintenanceReport(
-            days_rolled_up=days, rows_written=rows_written, results_deleted=deleted
+            days_rolled_up=days,
+            rows_written=rows_written,
+            results_deleted=deleted,
+            sessions_deleted=sessions,
         )
         log.info(
             "maintenance completed",
             rows_written=report.rows_written,
             results_deleted=report.results_deleted,
+            sessions_deleted=report.sessions_deleted,
             retention_days=self._retention_days,
         )
         return report
+
+    async def _prune_sessions(self, now: datetime) -> int:
+        """Drop expired logins, which are small but accumulate forever otherwise."""
+        async with self._session_factory() as session, session.begin():
+            return await repo.delete_expired_sessions(session, now=now)
 
     async def _roll_up(self, day: date) -> int:
         """Write the rollup rows for one day."""

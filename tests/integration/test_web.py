@@ -8,6 +8,7 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession
+from tests.integration.conftest import COOKIE_NAME, login
 
 from talaia.api.app import create_app
 from talaia.api.dependencies import get_session
@@ -34,7 +35,19 @@ def app(session: AsyncSession, database_url: str) -> FastAPI:
 
 
 @pytest_asyncio.fixture
-async def client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
+async def client(app: FastAPI, session: AsyncSession) -> AsyncIterator[httpx.AsyncClient]:
+    """Build a client carrying a valid session cookie; every guarded route needs one."""
+    token = await login(session)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", cookies={COOKIE_NAME: token}
+    ) as http_client:
+        yield http_client
+
+
+@pytest_asyncio.fixture
+async def anonymous(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
+    """Build a client with no cookie, for checking that the guard actually guards."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as http_client:
         yield http_client
@@ -377,3 +390,27 @@ class TestNotFoundPage:
 
         assert response.status_code == 404
         assert "application/json" in response.headers["content-type"]
+
+
+class TestAuthenticatedChrome:
+    async def test_the_masthead_shows_who_is_signed_in(self, client: httpx.AsyncClient) -> None:
+        response = await client.get("/")
+
+        assert "tester" in response.text
+        assert "Sign out" in response.text
+
+    async def test_the_login_page_has_no_sign_out(self, anonymous: httpx.AsyncClient) -> None:
+        response = await anonymous.get("/login")
+
+        assert response.status_code == 200
+        assert "Sign out" not in response.text
+        assert 'name="password"' in response.text
+
+    async def test_the_detail_page_shows_the_user_too(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        await make_monitor(session, "web")
+
+        response = await client.get("/monitors/web")
+
+        assert "Sign out" in response.text

@@ -165,3 +165,33 @@ class DailyUptime(Base):
     total_checks: Mapped[int] = mapped_column(Integer)
     successful_checks: Mapped[int] = mapped_column(Integer)
     avg_latency_ms: Mapped[int | None] = mapped_column(Integer)
+
+
+class User(Base):
+    """Someone who may log in. Created from the CLI; there is no signup."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(64), unique=True)
+    password_hash: Mapped[str] = mapped_column(Text)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Session(Base):
+    """One logged-in browser.
+
+    Only a hash of the token is stored, so a copy of this table cannot be replayed as a
+    set of live sessions.
+    """
+
+    __tablename__ = "sessions"
+    __table_args__ = (Index("ix_sessions_expires_at", "expires_at"),)
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

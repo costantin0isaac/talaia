@@ -10,6 +10,7 @@ import pytest_asyncio
 from fastapi import FastAPI
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
+from tests.integration.conftest import COOKIE_NAME, login
 
 from talaia.api.app import create_app
 from talaia.api.dependencies import get_session
@@ -37,7 +38,19 @@ def app(session: AsyncSession, database_url: str) -> FastAPI:
 
 
 @pytest_asyncio.fixture
-async def client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
+async def client(app: FastAPI, session: AsyncSession) -> AsyncIterator[httpx.AsyncClient]:
+    """Build a client carrying a valid session cookie; every guarded route needs one."""
+    token = await login(session)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", cookies={COOKIE_NAME: token}
+    ) as http_client:
+        yield http_client
+
+
+@pytest_asyncio.fixture
+async def anonymous(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
+    """Build a client with no cookie, for checking that the guard actually guards."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as http_client:
         yield http_client
@@ -358,9 +371,14 @@ def reload_app(
 
 
 @pytest_asyncio.fixture
-async def reload_client(reload_app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
+async def reload_client(
+    reload_app: FastAPI, session: AsyncSession
+) -> AsyncIterator[httpx.AsyncClient]:
+    token = await login(session, username="reloader")
     transport = httpx.ASGITransport(app=reload_app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as http_client:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", cookies={COOKIE_NAME: token}
+    ) as http_client:
         yield http_client
 
 

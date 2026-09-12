@@ -5,11 +5,12 @@ Services call these functions; they never build SQL themselves.
 
 from collections.abc import Sequence
 from datetime import date, datetime
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from sqlalchemy import CursorResult, delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 from talaia.db.models import (
     CheckResult,
@@ -19,6 +20,13 @@ from talaia.db.models import (
     MonitorState,
     MonitorStatus,
 )
+
+NotificationKind = Literal["down", "up"]
+
+NOTIFICATION_COLUMNS: dict[NotificationKind, InstrumentedAttribute[datetime | None]] = {
+    "down": Incident.notified_down_at,
+    "up": Incident.notified_up_at,
+}
 
 
 async def list_monitors(session: AsyncSession, *, active_only: bool = True) -> Sequence[Monitor]:
@@ -169,6 +177,36 @@ async def resolve_incident(
     """Close an incident and record how long it lasted."""
     incident.resolved_at = resolved_at
     incident.duration_seconds = int((resolved_at - incident.started_at).total_seconds())
+
+
+async def get_latest_incident(session: AsyncSession, monitor_id: int) -> Incident | None:
+    """Return the monitor's most recent incident, open or resolved."""
+    statement = (
+        select(Incident)
+        .where(Incident.monitor_id == monitor_id)
+        .order_by(Incident.started_at.desc())
+        .limit(1)
+    )
+    incident: Incident | None = await session.scalar(statement)
+    return incident
+
+
+async def claim_notification(
+    session: AsyncSession, incident_id: int, *, kind: NotificationKind, at: datetime
+) -> bool:
+    """Stamp an incident as notified, and report whether this caller won the stamp.
+
+    The stamp is set only if it was unset, in one statement, so an event is announced at
+    most once however many times the announcement is attempted.
+    """
+    column = NOTIFICATION_COLUMNS[kind]
+    statement = (
+        update(Incident)
+        .where(Incident.id == incident_id, column.is_(None))
+        .values({column: at})
+        .returning(Incident.id)
+    )
+    return (await session.execute(statement)).scalar_one_or_none() is not None
 
 
 async def list_incidents(

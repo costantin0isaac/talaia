@@ -17,10 +17,13 @@ from talaia.db import repository as repo
 from talaia.db.models import Monitor
 from talaia.engine.state import StateChange, StateSnapshot, Transition, evaluate
 from talaia.logging import get_logger
+from talaia.notify.base import Notification, Notifier, down_notification, up_notification
 
 log = get_logger(__name__)
 
 Clock = Callable[[], datetime]
+
+NOTIFY_DRAIN_SECONDS = 5.0
 
 
 class ResultRecorder(Protocol):
@@ -149,14 +152,19 @@ class Scheduler:
         clock: Clock = utc_now,
         jitter: bool = True,
         recorder: ResultRecorder | None = None,
+        notifier: Notifier | None = None,
+        base_url: str = "",
     ) -> None:
         self._session_factory = session_factory
         self._registry = registry
         self._clock = clock
         self._jitter = jitter
         self._recorder = recorder
+        self._notifier = notifier
+        self._base_url = base_url.rstrip("/")
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._configs: dict[str, MonitorConfig] = {}
+        self._notifications: set[asyncio.Task[None]] = set()
         self._stopping = asyncio.Event()
 
     @property
@@ -201,7 +209,26 @@ class Scheduler:
             await asyncio.gather(*tasks, return_exceptions=True)
         self._tasks.clear()
         self._configs.clear()
+        await self._drain_notifications()
         log.info("scheduler stopped")
+
+    async def _drain_notifications(self) -> None:
+        """Let notifications already in flight finish before shutting down.
+
+        A restart is exactly when a monitor is most likely to be changing state, so the
+        announcement is worth a few seconds; anything slower is abandoned.
+        """
+        pending = list(self._notifications)
+        if not pending:
+            return
+
+        _, unfinished = await asyncio.wait(pending, timeout=NOTIFY_DRAIN_SECONDS)
+        for task in unfinished:
+            task.cancel()
+        if unfinished:
+            await asyncio.gather(*unfinished, return_exceptions=True)
+            log.warning("abandoned notifications still in flight", count=len(unfinished))
+        self._notifications.clear()
 
     async def _desired_configs(self) -> dict[str, MonitorConfig]:
         async with self._session_factory() as session:
@@ -270,7 +297,7 @@ class Scheduler:
             self._announce(config, change, outcome)
 
     def _announce(self, config: MonitorConfig, change: StateChange, outcome: CheckOutcome) -> None:
-        """Log a state change. Notifications are delivered from Phase 2 onwards."""
+        """Log a state change and, if a notifier is configured, deliver it."""
         log.info(
             "monitor state changed",
             monitor=config.name,
@@ -278,3 +305,70 @@ class Scheduler:
             previous=change.previous.status.value,
             error=outcome.error,
         )
+        if self._notifier is None:
+            return
+
+        # Held in a set because asyncio keeps only a weak reference to a running task.
+        task = asyncio.create_task(
+            self._notify(config, change, outcome), name=f"talaia-notify-{config.name}"
+        )
+        self._notifications.add(task)
+        task.add_done_callback(self._notifications.discard)
+
+    async def _notify(
+        self, config: MonitorConfig, change: StateChange, outcome: CheckOutcome
+    ) -> None:
+        """Claim the incident's stamp, then deliver the message. Never raises."""
+        if self._notifier is None:
+            return
+
+        try:
+            prepared = await self._prepare_notification(config, change, outcome)
+            if prepared is None:
+                return
+            await self._notifier.send(prepared)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("notification failed", monitor=config.name)
+
+    async def _prepare_notification(
+        self, config: MonitorConfig, change: StateChange, outcome: CheckOutcome
+    ) -> Notification | None:
+        """Build the message and claim the right to send it, or return ``None``."""
+        kind: repo.NotificationKind = "down" if change.opens_incident else "up"
+        at = self._clock()
+
+        async with self._session_factory() as session, session.begin():
+            monitor = await repo.get_monitor_by_name(session, config.name)
+            if monitor is None:
+                return None
+
+            incident = await repo.get_latest_incident(session, monitor.id)
+            if incident is None:
+                return None
+
+            if not await repo.claim_notification(session, incident.id, kind=kind, at=at):
+                log.info(
+                    "state change already announced",
+                    monitor=config.name,
+                    incident=incident.id,
+                    kind=kind,
+                )
+                return None
+
+            link = f"{self._base_url}/monitors/{config.name}" if self._base_url else None
+            if kind == "down":
+                return down_notification(
+                    monitor=config.name,
+                    target=config.target,
+                    error=outcome.error,
+                    at=incident.started_at,
+                    link=link,
+                )
+            return up_notification(
+                monitor=config.name,
+                downtime_seconds=incident.duration_seconds,
+                at=incident.resolved_at or at,
+                link=link,
+            )

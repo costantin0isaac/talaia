@@ -33,6 +33,7 @@ class MonitorRead(BaseModel):
     interval_seconds: int
     timeout_seconds: int
     enabled: bool
+    active: bool
     state: MonitorState
 
 
@@ -40,6 +41,62 @@ class MonitorList(BaseModel):
     """All active monitors."""
 
     monitors: list[MonitorRead]
+
+
+class CheckResultRead(BaseModel):
+    """One recorded check."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    checked_at: datetime
+    success: bool
+    latency_ms: int | None
+    status_code: int | None
+    error: str | None
+
+
+class IncidentRead(BaseModel):
+    """A period during which a monitor was down."""
+
+    monitor: str
+    started_at: datetime
+    resolved_at: datetime | None
+    duration_seconds: int | None
+    cause: str
+
+
+class MonitorDetail(MonitorRead):
+    """Everything the detail page needs about one monitor."""
+
+    uptime_24h: float | None
+    recent_results: list[CheckResultRead]
+    recent_incidents: list[IncidentRead]
+
+
+class ResultList(BaseModel):
+    """A window of raw results for one monitor."""
+
+    monitor: str
+    hours: int
+    results: list[CheckResultRead]
+
+
+class IncidentList(BaseModel):
+    """Incident history across monitors."""
+
+    incidents: list[IncidentRead]
+
+
+class ReloadResult(BaseModel):
+    """What re-reading ``monitors.yaml`` changed."""
+
+    changed: bool
+    inserted: list[str]
+    updated: list[str]
+    reactivated: list[str]
+    deactivated: list[str]
+    unchanged: list[str]
+    monitors_running: int
 
 
 class Summary(BaseModel):
@@ -59,3 +116,11 @@ class Health(BaseModel):
 
     status: str
     version: str
+
+
+class Readiness(BaseModel):
+    """Readiness response: whether the dependencies this process needs are working."""
+
+    status: str
+    database: bool
+    scheduler: bool

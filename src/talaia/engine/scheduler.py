@@ -165,7 +165,17 @@ class Scheduler:
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._configs: dict[str, MonitorConfig] = {}
         self._notifications: set[asyncio.Task[None]] = set()
+        self._started = False
         self._stopping = asyncio.Event()
+
+    @property
+    def is_started(self) -> bool:
+        """Whether the scheduler has been started and not stopped.
+
+        Distinct from having running tasks: an instance whose monitors are all disabled
+        is started and correct, not unready.
+        """
+        return self._started
 
     @property
     def running_monitors(self) -> frozenset[str]:
@@ -180,6 +190,7 @@ class Scheduler:
     async def start(self) -> None:
         """Spawn a task for every schedulable monitor."""
         self._stopping.clear()
+        self._started = True
         await self.sync()
 
     async def sync(self) -> None:
@@ -201,6 +212,7 @@ class Scheduler:
 
     async def stop(self) -> None:
         """Cancel every task and wait for them to finish."""
+        self._started = False
         self._stopping.set()
         tasks = list(self._tasks.values())
         for task in tasks:

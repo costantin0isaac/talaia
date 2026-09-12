@@ -45,12 +45,13 @@ starts empty.
 
 ## Project status
 
-Under active development, delivered in phases. **Phase 2 is in progress.**
+Under active development, delivered in phases. **Phases 1 and 2 are complete; Phase 3 is
+next.**
 
 | Phase | Contents | Status |
 |---|---|---|
 | 1 | Scaffolding, settings, logging, database, config schema, HTTP checker, scheduler, JSON API | done |
-| 2 | ICMP and TCP checkers, Prometheus metrics, ntfy notifications, retention, `/api/reload` | in progress |
+| 2 | ICMP and TCP checkers, Prometheus metrics, ntfy notifications, retention, `/api/reload` | done |
 | 3 | Web dashboard and monitor detail pages | planned |
 | 4 | Session authentication, TLS expiry checks, Grafana dashboard, alerting rules | planned |
 
@@ -122,17 +123,37 @@ The API is then on <http://localhost:9999>:
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /healthz` | liveness |
+| `GET /healthz` | liveness: the process is serving |
+| `GET /readyz` | readiness: the database answers and the scheduler is started |
 | `GET /api/monitors` | every active monitor with its current state |
+| `GET /api/monitors/{name}` | one monitor, with recent results and incidents |
+| `GET /api/monitors/{name}/results?hours=24` | that monitor's raw results, newest first |
+| `GET /api/incidents?limit=50&open=false` | incident history across every monitor |
 | `GET /api/summary` | counts by status, open incidents, uptime over 24h |
+| `POST /api/reload` | re-read and reconcile `monitors.yaml` |
+| `GET /metrics` | Prometheus |
 | `GET /docs` | generated OpenAPI documentation |
+
+There are deliberately **no** `POST`/`PUT`/`DELETE` endpoints for monitors. `/api/reload`
+re-reads the file; it does not accept one.
 
 Migrations are applied by the container entrypoint before the server binds, so a deploy
 never leaves the schema behind the code.
 
 Configuration is read from `config/monitors.yaml`, which the dev compose file mounts
-read-only. Editing it takes effect on the next restart; `POST /api/reload` arrives in
-Phase 2.
+read-only. After editing it, either restart or:
+
+```sh
+curl -X POST http://localhost:9999/api/reload
+```
+
+Reload reconciles the file in one transaction and then resyncs the scheduler, so monitors
+whose configuration did not change keep their task and their position within their interval.
+An invalid file is rejected with `422` and the running configuration is left alone — a
+broken edit cannot take down monitoring that is currently working.
+
+`/readyz` is the endpoint to point a container healthcheck or an orchestrator at; `/healthz`
+only says the process is up, which stays true while the database is unreachable.
 
 **One worker only.** Each uvicorn worker would run its own scheduler and duplicate every
 check. This is enforced in `__main__.py` and noted in the Dockerfile.

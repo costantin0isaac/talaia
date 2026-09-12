@@ -45,8 +45,10 @@ ENV PATH="/app/.venv/bin:$PATH" \
 USER talaia
 EXPOSE 9999
 
+# /readyz, not /healthz: a process that is serving while the database is unreachable is
+# up but useless, and the healthcheck should say so.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9999/healthz').read()"
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9999/readyz').read()"
 
 ENTRYPOINT ["./docker-entrypoint.sh"]
 # Exactly one worker. Each worker would run its own scheduler and duplicate every check.

@@ -198,6 +198,27 @@ async def count_open_incidents(session: AsyncSession) -> int:
     return (await session.execute(statement)).scalar_one()
 
 
+async def aggregate_check_results(
+    session: AsyncSession, *, start: datetime, end: datetime
+) -> Sequence[tuple[int, int, int, int | None]]:
+    """Summarise results in a window as ``(monitor_id, total, successful, avg_latency_ms)``."""
+    statement = (
+        select(
+            CheckResult.monitor_id,
+            func.count(),
+            func.count().filter(CheckResult.success.is_(True)),
+            func.avg(CheckResult.latency_ms),
+        )
+        .where(CheckResult.checked_at >= start, CheckResult.checked_at < end)
+        .group_by(CheckResult.monitor_id)
+    )
+    rows = (await session.execute(statement)).all()
+    return [
+        (monitor_id, total, successful, round(average) if average is not None else None)
+        for monitor_id, total, successful, average in rows
+    ]
+
+
 async def upsert_daily_uptime(
     session: AsyncSession,
     *,

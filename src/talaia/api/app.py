@@ -13,6 +13,7 @@ from talaia.checks.registry import build_registry
 from talaia.config.loader import ConfigError
 from talaia.config.reconciler import reconcile_file
 from talaia.db.engine import create_engine, create_session_factory
+from talaia.engine.retention import RetentionTask
 from talaia.engine.scheduler import Scheduler
 from talaia.logging import configure_logging, get_logger
 from talaia.metrics.registry import Metrics
@@ -41,10 +42,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     clients = _build_clients()
     metrics = Metrics(version=__version__, commit=settings.commit)
     scheduler = Scheduler(session_factory, build_registry(clients), recorder=metrics)
+    retention = RetentionTask(session_factory, retention_days=settings.retention_days)
 
     app.state.engine = engine
     app.state.session_factory = session_factory
     app.state.scheduler = scheduler
+    app.state.retention = retention
     app.state.metrics = metrics
 
     if not settings.notifications_enabled:
@@ -58,11 +61,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             raise
 
     await scheduler.start()
+    await retention.start()
     log.info("talaia started", version=__version__, monitors=len(scheduler.running_monitors))
 
     try:
         yield
     finally:
+        await retention.stop()
         await scheduler.stop()
         await clients.verifying.aclose()
         await clients.insecure.aclose()

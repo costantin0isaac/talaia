@@ -20,6 +20,7 @@ class MonitorState(BaseModel):
     last_latency_ms: int | None
     last_error: str | None
     status_changed_at: datetime | None
+    last_expires_in_days: int | None
 
 
 class MonitorRead(BaseModel):

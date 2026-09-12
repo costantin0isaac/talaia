@@ -17,6 +17,7 @@ HOSTNAME_PATTERN = re.compile(
 MIN_INTERVAL_SECONDS = 10
 MIN_PORT = 1
 MAX_PORT = 65535
+DEFAULT_TLS_PORT = 443
 
 
 class MonitorType(StrEnum):
@@ -25,6 +26,7 @@ class MonitorType(StrEnum):
     HTTP = "http"
     ICMP = "icmp"
     TCP = "tcp"
+    TLS = "tls"
 
 
 class StrictModel(BaseModel):
@@ -42,6 +44,20 @@ class HttpOptions(StrictModel):
     follow_redirects: bool = False
     verify_tls: bool = True
     headers: dict[str, str] = {}
+
+
+class TlsOptions(StrictModel):
+    """The ``tls:`` block of a TLS monitor."""
+
+    warn_days: int = Field(
+        default=14,
+        ge=1,
+        description="Fail the check once fewer than this many days of validity remain.",
+    )
+    server_name: str | None = Field(
+        default=None,
+        description="SNI to present, when it differs from the host in the target.",
+    )
 
 
 class Defaults(StrictModel):
@@ -67,6 +83,7 @@ class MonitorSpec(StrictModel):
     recovery_threshold: int | None = Field(default=None, ge=1)
     enabled: bool = True
     http: HttpOptions | None = None
+    tls: TlsOptions | None = None
 
     @model_validator(mode="after")
     def _check_target_matches_type(self) -> Self:
@@ -75,6 +92,7 @@ class MonitorSpec(StrictModel):
             MonitorType.HTTP: _validate_http_target,
             MonitorType.ICMP: _validate_icmp_target,
             MonitorType.TCP: _validate_tcp_target,
+            MonitorType.TLS: _validate_tls_target,
         }
         error = validators[self.type](self.target)
         if error is not None:
@@ -84,11 +102,13 @@ class MonitorSpec(StrictModel):
     @model_validator(mode="after")
     def _check_type_specific_block(self) -> Self:
         """Allow a type-specific block only on a monitor of that type."""
-        if self.http is not None and self.type is not MonitorType.HTTP:
-            raise ValueError(
-                f"monitor {self.name!r}: an 'http:' block is only valid for type 'http', "
-                f"not {self.type.value!r}"
-            )
+        blocks = {"http": (self.http, MonitorType.HTTP), "tls": (self.tls, MonitorType.TLS)}
+        for key, (block, required_type) in blocks.items():
+            if block is not None and self.type is not required_type:
+                raise ValueError(
+                    f"monitor {self.name!r}: a {key!r} block is only valid for type "
+                    f"{required_type.value!r}, not {self.type.value!r}"
+                )
         return self
 
 
@@ -108,6 +128,7 @@ class MonitorConfig(StrictModel):
     recovery_threshold: int
     enabled: bool
     http: HttpOptions | None
+    tls: TlsOptions | None
 
 
 class MonitorsFile(StrictModel):
@@ -164,6 +185,7 @@ def _apply_defaults(spec: MonitorSpec, defaults: Defaults) -> MonitorConfig:
         ),
         enabled=spec.enabled,
         http=spec.http,
+        tls=spec.tls,
     )
 
 
@@ -199,6 +221,36 @@ def _validate_tcp_target(target: str) -> str | None:
     if _is_ip_address(host) or HOSTNAME_PATTERN.match(host):
         return None
     return f"target {target!r} has an invalid host"
+
+
+def _validate_tls_target(target: str) -> str | None:
+    """Return an error message if the target is not ``host`` or ``host:port``."""
+    if "://" in target or "/" in target:
+        return f"type 'tls' needs a host or host:port, not a URL, got {target!r}"
+
+    host, port = split_tls_target(target)
+    if port is None:
+        return f"target {target!r} has an invalid port; expected {MIN_PORT}-{MAX_PORT}"
+    if _is_ip_address(host) or HOSTNAME_PATTERN.match(host):
+        return None
+    return f"target {target!r} has an invalid host"
+
+
+def split_tls_target(target: str) -> tuple[str, int | None]:
+    """Split a TLS target into host and port, defaulting the port to 443.
+
+    The port is ``None`` when it was written but is not a usable number, which is how the
+    validator tells a bad port from an omitted one.
+    """
+    if _is_ip_address(target):
+        return target.strip("[]"), DEFAULT_TLS_PORT
+
+    host, separator, port = target.rpartition(":")
+    if not separator:
+        return target, DEFAULT_TLS_PORT
+    if not port.isdigit() or not MIN_PORT <= int(port) <= MAX_PORT:
+        return host.strip("[]"), None
+    return host.strip("[]"), int(port)
 
 
 def _is_ip_address(value: str) -> bool:

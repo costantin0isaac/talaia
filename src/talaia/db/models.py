@@ -109,6 +109,7 @@ class MonitorState(Base):
     last_latency_ms: Mapped[int | None] = mapped_column(Integer)
     last_error: Mapped[str | None] = mapped_column(Text)
     status_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_expires_in_days: Mapped[int | None] = mapped_column(Integer)
 
     monitor: Mapped[Monitor] = relationship(back_populates="state")
 

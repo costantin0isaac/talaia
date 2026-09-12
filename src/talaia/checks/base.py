@@ -16,6 +16,7 @@ class CheckOutcome:
     latency_ms: int | None
     status_code: int | None = None
     error: str | None = None
+    expires_in_days: int | None = None
 
 
 class Checker(Protocol):

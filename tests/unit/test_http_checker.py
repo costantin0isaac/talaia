@@ -25,6 +25,7 @@ def monitor(**http_options: object) -> MonitorConfig:
         recovery_threshold=2,
         enabled=True,
         http=HttpOptions(**http_options),  # type: ignore[arg-type]
+        tls=None,
     )
 
 

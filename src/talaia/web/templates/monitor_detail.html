@@ -23,6 +23,9 @@
   <div class="stat"><span class="stat-value">{{ detail.uptime_7d }}</span><span class="stat-label">7 days</span></div>
   <div class="stat"><span class="stat-value">{{ detail.uptime_30d }}</span><span class="stat-label">30 days</span></div>
   <div class="stat"><span class="stat-value">{{ row.last_latency }}</span><span class="stat-label">last latency</span></div>
+  {% if row.certificate %}
+  <div class="stat"><span class="stat-value">{{ row.certificate }}</span><span class="stat-label">certificate</span></div>
+  {% endif %}
 </section>
 
 <section class="panel">

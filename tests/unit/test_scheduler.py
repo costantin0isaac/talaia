@@ -24,6 +24,7 @@ def config(name: str, *, interval: int = 60, target: str = "http://10.0.0.1") ->
         recovery_threshold=2,
         enabled=True,
         http=None,
+        tls=None,
     )
 
 

@@ -39,6 +39,7 @@ class MonitorSample:
     status: MonitorStatus
     last_latency_ms: int | None
     consecutive_failures: int
+    last_expires_in_days: int | None = None
 
 
 class Metrics:
@@ -91,6 +92,12 @@ def _scrape_registry(samples: Sequence[MonitorSample]) -> CollectorRegistry:
         ["monitor"],
         registry=registry,
     )
+    certificate_days = Gauge(
+        "talaia_certificate_days_remaining",
+        "Days of validity left on the certificate, for monitors that check one.",
+        ["monitor", "type", "group"],
+        registry=registry,
+    )
     monitors_total = Gauge(
         "talaia_monitors_total",
         "Number of active monitors in each status.",
@@ -111,6 +118,9 @@ def _scrape_registry(samples: Sequence[MonitorSample]) -> CollectorRegistry:
 
         if sample.last_latency_ms is not None:
             duration.labels(**labels).set(sample.last_latency_ms / 1000)
+
+        if sample.last_expires_in_days is not None:
+            certificate_days.labels(**labels).set(sample.last_expires_in_days)
 
         consecutive_failures.labels(monitor=sample.name).set(sample.consecutive_failures)
 

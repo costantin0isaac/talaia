@@ -34,6 +34,7 @@ def monitor(target: str = "10.0.0.1", *, timeout: int = 5) -> MonitorConfig:
         recovery_threshold=2,
         enabled=True,
         http=None,
+        tls=None,
     )
 
 

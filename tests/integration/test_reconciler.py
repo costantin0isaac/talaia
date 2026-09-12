@@ -4,13 +4,16 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from talaia.config.loader import ConfigError
 from talaia.config.reconciler import reconcile, reconcile_file
-from talaia.config.schema import MonitorsFile
+from talaia.config.schema import MonitorsFile, MonitorType
 from talaia.db import repository as repo
 from talaia.db.models import MonitorStatus
+from talaia.engine.scheduler import to_monitor_config
 
 pytestmark = pytest.mark.integration
 
@@ -243,3 +246,72 @@ class TestRenameIsDeleteAndCreate:
         assert old.active is False
         expected_uptime_since = NOW - timedelta(days=1)
         assert await repo.uptime_ratio(session, original_id, since=expected_uptime_since) is None
+
+
+class TestTlsMonitors:
+    async def test_a_tls_block_survives_the_round_trip(self, session: AsyncSession) -> None:
+        """YAML -> database -> MonitorConfig, which is what the checker actually receives."""
+        config = MonitorsFile.model_validate(
+            {
+                "monitors": [
+                    {
+                        "name": "cert",
+                        "type": "tls",
+                        "target": "example.com:8443",
+                        "interval": 3600,
+                        "tls": {"warn_days": 21, "server_name": "www.example.com"},
+                    }
+                ]
+            }
+        )
+
+        await reconcile(session, config)
+
+        row = await repo.get_monitor_by_name(session, "cert")
+        assert row is not None
+        assert row.type is MonitorType.TLS
+
+        projected = to_monitor_config(row)
+        assert projected.tls is not None
+        assert projected.tls.warn_days == 21
+        assert projected.tls.server_name == "www.example.com"
+
+    async def test_a_tls_monitor_without_a_block_gets_the_defaults(
+        self, session: AsyncSession
+    ) -> None:
+        config = MonitorsFile.model_validate(
+            {"monitors": [{"name": "cert", "type": "tls", "target": "example.com"}]}
+        )
+
+        await reconcile(session, config)
+
+        row = await repo.get_monitor_by_name(session, "cert")
+        assert row is not None
+        assert to_monitor_config(row).tls is None
+
+    async def test_the_database_rejects_an_unknown_monitor_type(
+        self, session: AsyncSession
+    ) -> None:
+        """The CHECK constraint rewritten in migration 0003 has to still be doing its job."""
+        with pytest.raises(IntegrityError):
+            await session.execute(
+                text(
+                    "INSERT INTO monitors (name, type, target, interval_seconds, "
+                    "timeout_seconds, failure_threshold, recovery_threshold, enabled, "
+                    "active, config) VALUES ('bogus', 'smtp', 'example.com', 60, 10, 3, 2, "
+                    "true, true, '{}'::jsonb)"
+                )
+            )
+        await session.rollback()
+
+    async def test_the_database_accepts_the_tls_type(self, session: AsyncSession) -> None:
+        await session.execute(
+            text(
+                "INSERT INTO monitors (name, type, target, interval_seconds, "
+                "timeout_seconds, failure_threshold, recovery_threshold, enabled, "
+                "active, config) VALUES ('accepted', 'tls', 'example.com', 60, 10, 3, 2, "
+                "true, true, '{}'::jsonb)"
+            )
+        )
+
+        assert await repo.get_monitor_by_name(session, "accepted") is not None

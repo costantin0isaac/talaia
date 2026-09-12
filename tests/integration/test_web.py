@@ -61,10 +61,12 @@ async def make_monitor(
     group: str | None = "services",
     latency_ms: int | None = 20,
     last_error: str | None = None,
+    monitor_type: MonitorType = MonitorType.HTTP,
+    expires_in_days: int | None = None,
 ) -> Monitor:
     monitor = Monitor(
         name=name,
-        type=MonitorType.HTTP,
+        type=monitor_type,
         target=f"http://10.0.0.1/{name}",
         group_name=group,
         description="an example monitor",
@@ -83,6 +85,7 @@ async def make_monitor(
     state.last_checked_at = NOW
     state.last_latency_ms = latency_ms
     state.last_error = last_error
+    state.last_expires_in_days = expires_in_days
     await session.flush()
     return monitor
 
@@ -414,3 +417,48 @@ class TestAuthenticatedChrome:
         response = await client.get("/monitors/web")
 
         assert "Sign out" in response.text
+
+
+class TestCertificateDisplay:
+    async def test_the_detail_page_shows_remaining_validity(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        await make_monitor(session, "cert", monitor_type=MonitorType.TLS, expires_in_days=45)
+
+        response = await client.get("/monitors/cert")
+
+        assert "expires in 45d" in response.text
+        assert "certificate" in response.text
+
+    async def test_an_expired_certificate_reads_as_past(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        await make_monitor(
+            session,
+            "cert",
+            monitor_type=MonitorType.TLS,
+            status=MonitorStatus.DOWN,
+            expires_in_days=-2,
+        )
+
+        response = await client.get("/monitors/cert")
+
+        assert "expired 2d ago" in response.text
+
+    async def test_the_dashboard_row_carries_it_too(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        await make_monitor(session, "cert", monitor_type=MonitorType.TLS, expires_in_days=45)
+
+        response = await client.get("/")
+
+        assert "expires in 45d" in response.text
+
+    async def test_monitors_without_a_certificate_show_nothing(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        await make_monitor(session, "web")
+
+        response = await client.get("/monitors/web")
+
+        assert "expires in" not in response.text

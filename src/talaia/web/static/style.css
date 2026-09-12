@@ -109,6 +109,8 @@ code { font-family: var(--mono); font-size: 0.9em; }
 }
 .badge-muted { border-style: dashed; }
 
+.cert-hint { display: block; color: var(--text-muted); font-size: 0.78em; white-space: nowrap; }
+
 .error-hint {
   display: block; max-width: 40ch; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; color: var(--down); font-size: 0.8em;

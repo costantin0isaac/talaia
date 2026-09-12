@@ -12,7 +12,10 @@
     {% if row.last_error %}<span class="error-hint" title="{{ row.last_error }}">{{ row.last_error }}</span>{% endif %}
   </td>
   <td class="cell-target"><code>{{ row.target }}</code></td>
-  <td class="cell-latency">{{ row.last_latency }}</td>
+  <td class="cell-latency">
+    {{ row.last_latency }}
+    {% if row.certificate %}<span class="cert-hint">{{ row.certificate }}</span>{% endif %}
+  </td>
   <td class="cell-uptime">{{ row.uptime_24h }}</td>
   <td class="cell-strip">{% include "partials/strip.html" %}</td>
 </tr>

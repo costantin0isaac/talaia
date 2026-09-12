@@ -45,15 +45,15 @@ starts empty.
 
 ## Project status
 
-Under active development, delivered in phases. **Phases 1 to 3 are complete; Phase 4 is
-in progress.**
+Delivered in phases. **All four phases are complete**, which covers everything the
+specification scopes; what remains is deliberately out of scope, listed below.
 
 | Phase | Contents | Status |
 |---|---|---|
 | 1 | Scaffolding, settings, logging, database, config schema, HTTP checker, scheduler, JSON API | done |
 | 2 | ICMP and TCP checkers, Prometheus metrics, ntfy notifications, retention, `/api/reload` | done |
 | 3 | Web dashboard and monitor detail pages | done |
-| 4 | Session authentication, TLS expiry checks, Grafana dashboard, alerting rules | in progress |
+| 4 | Session authentication, TLS expiry checks, Grafana dashboard, alerting rules | done |
 
 Deliberately out of scope: multi-tenancy, remote probes, high availability, databases other
 than PostgreSQL, SSO, editing monitors through the UI, and headless-browser checks.
@@ -463,9 +463,12 @@ proxy.
 
 ```yaml
 scrape_configs:
-  - job_name: talaia
+  - job_name: talaia          # the alerting rules match on this job name
     static_configs:
       - targets: ["talaia-host:9999"]
+
+rule_files:
+  - talaia-rules.yml
 ```
 
 | Metric | Type | Labels |
@@ -475,7 +478,11 @@ scrape_configs:
 | `talaia_checks_total` | counter | `monitor`, `result` |
 | `talaia_monitor_consecutive_failures` | gauge | `monitor` |
 | `talaia_monitors_total` | gauge | `status` |
+| `talaia_certificate_days_remaining` | gauge | `monitor`, `type`, `group` |
 | `talaia_build_info` | gauge | `version`, `commit` |
+
+`talaia_certificate_days_remaining` is exported only by `tls` monitors, and is negative
+once the certificate has expired.
 
 `talaia_check_up` is **absent** while a monitor is `unknown` or `paused`, rather than
 reporting a misleading zero. Alerting rules should use `talaia_check_up == 0`, not
@@ -489,6 +496,51 @@ handles it.
 Labels are deliberately limited to `monitor`, `type`, `group`, `result` and `status`. A
 URL, an IP address, an error message or a status code must never become a label — that is
 how a metrics database gets destroyed by cardinality.
+
+### Dashboard and alerting rules
+
+Two files are committed, ready to use:
+
+| File | What it is |
+|---|---|
+| `grafana/talaia-dashboard.json` | Grafana dashboard, import as-is |
+| `prometheus/talaia-rules.yml` | example alerting rules |
+
+Import the dashboard through **Dashboards → New → Import → Upload JSON**. It asks for a
+Prometheus datasource rather than hard-coding one, and has `group` and `monitor` variables
+for filtering. Nothing else needs configuring.
+
+Check the rules before reloading Prometheus, the same way CI does:
+
+```sh
+promtool check rules prometheus/talaia-rules.yml
+```
+
+### What the rules deliberately do not alert on
+
+There is **no "monitor is down" alert**, and that is the point of the split.
+
+Talaia already sends that notification itself, immediately, with the incident attached.
+A Prometheus rule saying the same thing would give you two messages for one event, arriving
+minutes apart, and would teach you to ignore both.
+
+What the rules cover instead is everything Talaia structurally cannot tell you:
+
+| Alert | Why Talaia cannot report it |
+|---|---|
+| `TalaiaDown` | It is the thing that is down |
+| `TalaiaSchedulerStalled` | Serving scrapes, checking nothing — no state ever changes, so nothing ever notifies |
+| `TalaiaMonitorStuckUnknown` | A monitor that never ran has no transition to announce |
+| `TalaiaUptimeBelowTarget` | Accumulated short outages that each recovered on their own |
+| `TalaiaFlapping` | Each transition was reported correctly; the pattern is the problem |
+| `TalaiaLatencyElevated` | Degradation short of failure is still a passing check |
+| `TalaiaCertificateExpiringSoon` | Fires before Talaia's own `warn_days`, as a quiet warning first |
+
+`TalaiaSchedulerStalled` is the one worth understanding. If the scheduler wedges while
+uvicorn keeps serving, `/healthz` stays green, `/readyz` stays green, every monitor holds
+its last known state, and Talaia goes permanently, silently quiet. From the outside that is
+indistinguishable from everything being fine. `sum(rate(talaia_checks_total[10m])) == 0`
+is what catches it.
 
 ## Development
 

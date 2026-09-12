@@ -21,6 +21,8 @@ dependencies = [
     "prometheus-client>=0.24",
     "pyyaml>=6.0",
     "structlog>=25.5",
+    "argon2-cffi>=25.1",
+    "python-multipart>=0.0.20",
 ]
 
 [project.urls]
@@ -82,6 +84,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["D100", "D101", "D102", "D103", "D104"]
 "src/talaia/config/__main__.py" = ["T201"]  # a CLI prints to stdout
+"src/talaia/auth/__main__.py" = ["T201"]    # a CLI prints to stdout
 "migrations/**" = ["D103", "D100", "INP001"]
 
 [tool.ruff.lint.pydocstyle]

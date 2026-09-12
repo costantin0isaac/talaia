@@ -16,6 +16,12 @@
     <nav class="masthead-links">
       <a href="/docs">API</a>
       <a href="/metrics">Metrics</a>
+      {% if user %}
+      <form method="post" action="/logout" class="logout-form">
+        <span class="masthead-user">{{ user.username }}</span>
+        <button type="submit" class="linklike">Sign out</button>
+      </form>
+      {% endif %}
     </nav>
   </header>
 

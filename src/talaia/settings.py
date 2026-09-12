@@ -38,6 +38,17 @@ class Settings(BaseSettings):
         description="How long raw check results are kept before pruning.",
     )
 
+    session_ttl_hours: int = Field(
+        default=720,
+        ge=1,
+        description="How long a login lasts before it must be repeated.",
+    )
+    session_cookie_name: str = "talaia_session"
+    session_cookie_secure: bool = Field(
+        default=True,
+        description="Send the session cookie only over HTTPS. Set false for plain-HTTP LAN access.",
+    )
+
     ntfy_url: str | None = None
     ntfy_topic: str | None = None
     ntfy_token: str | None = None

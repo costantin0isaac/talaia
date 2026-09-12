@@ -46,14 +46,14 @@ starts empty.
 ## Project status
 
 Under active development, delivered in phases. **Phases 1 to 3 are complete; Phase 4 is
-next.**
+in progress.**
 
 | Phase | Contents | Status |
 |---|---|---|
 | 1 | Scaffolding, settings, logging, database, config schema, HTTP checker, scheduler, JSON API | done |
 | 2 | ICMP and TCP checkers, Prometheus metrics, ntfy notifications, retention, `/api/reload` | done |
 | 3 | Web dashboard and monitor detail pages | done |
-| 4 | Session authentication, TLS expiry checks, Grafana dashboard, alerting rules | planned |
+| 4 | Session authentication, TLS expiry checks, Grafana dashboard, alerting rules | in progress |
 
 Deliberately out of scope: multi-tenancy, remote probes, high availability, databases other
 than PostgreSQL, SSO, editing monitors through the UI, and headless-browser checks.
@@ -288,6 +288,66 @@ grouping, the chart geometry, the incident durations — is built by pure functi
 Uptime windows come from different places on purpose: 24h is computed from raw
 `check_results`, while 7d and 30d are summed from the `daily_uptime` rollups, which outlive
 retention pruning.
+
+## Signing in
+
+Every page and every `/api/` endpoint requires a session. `/healthz`, `/readyz` and
+`/metrics` do not — they are scraped by machines that will never hold a cookie.
+
+There is no sign-up page and no user administration in the UI, because the alternative is
+an unauthenticated endpoint that creates accounts. Users come from the command line:
+
+```sh
+docker compose exec app python -m talaia.auth add isaac
+docker compose exec app python -m talaia.auth list
+docker compose exec app python -m talaia.auth passwd isaac
+docker compose exec app python -m talaia.auth disable isaac
+```
+
+Start the application with no users and it logs a warning at startup saying exactly that,
+then serves a login page nobody can get past. It does not create a default account, because
+a default account is a published password.
+
+### The cookie flag that will bite you
+
+`TALAIA_SESSION_COOKIE_SECURE` defaults to **true**, which means the browser will not send
+the session cookie over plain `http://`. Reaching Talaia at `http://10.0.0.x:9999` with the
+default leaves you at a login form that accepts your password and then bounces you straight
+back to it, with no error — the login worked, the cookie was simply never returned.
+
+Set it to `false` for plain-HTTP LAN access, or put Talaia behind HTTPS and leave it alone.
+`compose.dev.yaml` already sets it false.
+
+### How it is built
+
+| Concern | Choice |
+|---|---|
+| Password storage | argon2id, library defaults, minimum 12 characters |
+| Session token | 256 random bits, `SHA-256` hashed before storage |
+| Cookie | `HttpOnly`, `SameSite=Lax`, `Secure` (configurable) |
+| Expiry | `TALAIA_SESSION_TTL_HOURS`, default 30 days, absolute |
+
+Only the *hash* of a session token is stored, so a copy of the `sessions` table cannot be
+replayed as a set of live logins. The token itself is hashed with SHA-256 rather than argon2
+because it already carries 256 bits of entropy — there is no weak secret to slow an attacker
+down over, and argon2 on every authenticated request would be pure latency.
+
+The expiry and the user's `active` flag are both part of the session lookup query, so a
+disabled account loses its open sessions immediately and no cleanup step can be forgotten.
+Changing a password deletes that user's sessions outright. Expired rows are swept by the
+hourly retention task.
+
+Failed logins do not say whether the username or the password was wrong, and an unknown
+username is still checked against a dummy hash so the two paths take the same time.
+
+### Using the API from a script
+
+The API takes the same cookie, so `curl` needs a cookie jar:
+
+```sh
+curl -c jar -d 'username=isaac&password=...' http://localhost:9999/login
+curl -b jar -X POST http://localhost:9999/api/reload
+```
 
 ## Troubleshooting
 

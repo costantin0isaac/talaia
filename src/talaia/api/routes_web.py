@@ -1,25 +1,20 @@
 """HTML endpoints: the dashboard, the monitor detail page and their HTMX partials."""
 
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Annotated
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from talaia.api.dependencies import get_session
+from talaia.api.dependencies import AuthenticatedUser, get_session
 from talaia.db import repository as repo
 from talaia.db.models import Monitor, MonitorStatus
 from talaia.formatting import format_percentage
 from talaia.web import view
-
-TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "web" / "templates"
-STATIC_DIR = Path(__file__).resolve().parent.parent / "web" / "static"
-
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+from talaia.web.templates_env import templates
 
 router = APIRouter(tags=["web"], include_in_schema=False)
 
@@ -40,6 +35,25 @@ def wants_html(request: Request) -> bool:
     return not path.startswith(("/api", "/partials", "/metrics", "/healthz", "/readyz"))
 
 
+def unauthenticated(request: Request, exc: StarletteHTTPException) -> Response:
+    """Turn a 401 into whatever the caller can act on.
+
+    A browser is sent to the login form with its destination remembered. HTMX is told to
+    navigate, because a partial swapped into a row could never show a login form. Anything
+    else — curl, Prometheus, a script — gets the JSON it asked for.
+    """
+    if request.headers.get("HX-Request") == "true":
+        response = Response(status_code=status.HTTP_401_UNAUTHORIZED)
+        response.headers["HX-Redirect"] = "/login"
+        return response
+
+    if wants_html(request):
+        target = quote(str(request.url.path), safe="/")
+        return RedirectResponse(f"/login?next={target}", status_code=status.HTTP_303_SEE_OTHER)
+
+    return JSONResponse({"detail": exc.detail}, status_code=status.HTTP_401_UNAUTHORIZED)
+
+
 async def not_found(request: Request, exc: StarletteHTTPException) -> HTMLResponse:
     """Render a 404 as a page for the UI, so a mistyped URL is not a JSON blob."""
     return templates.TemplateResponse(
@@ -51,13 +65,13 @@ async def not_found(request: Request, exc: StarletteHTTPException) -> HTMLRespon
 
 
 @router.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request, session: SessionDep) -> HTMLResponse:
+async def dashboard(request: Request, session: SessionDep, user: AuthenticatedUser) -> HTMLResponse:
     """Render every active monitor, grouped, with its status strip."""
     groups, summary = await _dashboard_state(session)
     return templates.TemplateResponse(
         request,
         "dashboard.html",
-        {"groups": groups, "summary": summary, "poll_seconds": POLL_SECONDS},
+        {"groups": groups, "summary": summary, "poll_seconds": POLL_SECONDS, "user": user},
     )
 
 
@@ -92,7 +106,9 @@ async def monitor_row_partial(name: str, request: Request, session: SessionDep) 
 
 
 @router.get("/monitors/{name}", response_class=HTMLResponse)
-async def monitor_detail(name: str, request: Request, session: SessionDep) -> HTMLResponse:
+async def monitor_detail(
+    name: str, request: Request, session: SessionDep, user: AuthenticatedUser
+) -> HTMLResponse:
     """Render one monitor's configuration, uptime, latency chart and incidents."""
     monitor = await _require_monitor(session, name)
     now = datetime.now(UTC)
@@ -133,7 +149,7 @@ async def monitor_detail(name: str, request: Request, session: SessionDep) -> HT
     return templates.TemplateResponse(
         request,
         "monitor_detail.html",
-        {"detail": detail, "chart_hours": CHART_HOURS},
+        {"detail": detail, "chart_hours": CHART_HOURS, "user": user},
     )
 
 

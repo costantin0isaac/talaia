@@ -9,6 +9,8 @@ services:
       TALAIA_DATABASE_URL: postgresql+asyncpg://talaia:changeme@db:5432/talaia
       # Point at config/monitors.local.yaml in .env to run against real targets.
       TALAIA_CONFIG_PATH: ${TALAIA_CONFIG_PATH:-/app/config/monitors.yaml}
+      # Development is plain HTTP, so a Secure cookie would never be sent back.
+      TALAIA_SESSION_COOKIE_SECURE: "false"
       TALAIA_LOG_FORMAT: console
       TALAIA_LOG_LEVEL: DEBUG
     ports:

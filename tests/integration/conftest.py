@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
@@ -8,9 +9,34 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from testcontainers.community.postgres import PostgresContainer
 
+from talaia.auth.passwords import hash_password
+from talaia.auth.tokens import hash_token, new_token
+from talaia.db import repository as repo
 from talaia.db.engine import create_engine
 
 pytestmark = pytest.mark.integration
+
+TEST_PASSWORD = "a-long-enough-test-password"
+
+# Hashed once: argon2 is deliberately slow, and every authenticated test would pay for it.
+TEST_PASSWORD_HASH = hash_password(TEST_PASSWORD)
+
+COOKIE_NAME = "talaia_session"
+
+
+async def login(session: AsyncSession, *, username: str = "tester", active: bool = True) -> str:
+    """Create a user with a live session and return the token its browser would hold."""
+    user = await repo.create_user(session, username=username, password_hash=TEST_PASSWORD_HASH)
+    user.active = active
+    token = new_token()
+    await repo.create_session(
+        session,
+        token_hash=hash_token(token),
+        user_id=user.id,
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+    await session.flush()
+    return token
 
 
 @pytest.fixture(scope="session")

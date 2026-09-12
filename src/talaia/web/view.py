@@ -42,6 +42,7 @@ class MonitorRow:
     uptime_24h: str
     last_checked: str
     last_error: str | None
+    certificate: str | None
     segments: tuple[Segment, ...]
 
 
@@ -146,6 +147,15 @@ def _segment_title(result: CheckResult) -> str:
     return f"{when} · {result.error or 'failed'}"
 
 
+def format_certificate(expires_in_days: int | None) -> str | None:
+    """Render remaining certificate validity, or ``None`` for a monitor that has none."""
+    if expires_in_days is None:
+        return None
+    if expires_in_days < 0:
+        return f"expired {abs(expires_in_days)}d ago"
+    return f"expires in {expires_in_days}d"
+
+
 def monitor_row(
     monitor: Monitor,
     state: MonitorState | None,
@@ -157,6 +167,7 @@ def monitor_row(
     status = state.status if state is not None else MonitorStatus.UNKNOWN
     latency = state.last_latency_ms if state is not None else None
     checked_at = state.last_checked_at if state is not None else None
+    expires_in = state.last_expires_in_days if state is not None else None
     return MonitorRow(
         name=monitor.name,
         type=monitor.type.value,
@@ -167,6 +178,7 @@ def monitor_row(
         uptime_24h=format_percentage(uptime_24h),
         last_checked=format_timestamp(checked_at) if checked_at else "never",
         last_error=state.last_error if state is not None else None,
+        certificate=format_certificate(expires_in),
         segments=status_strip(results),
     )
 

@@ -9,7 +9,14 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from talaia.config.schema import MonitorsFile, MonitorType
+from talaia.config.schema import (
+    HttpOptions,
+    MonitorsFile,
+    MonitorSpec,
+    MonitorType,
+    TlsOptions,
+    split_tls_target,
+)
 
 
 def parse(document: dict[str, Any]) -> MonitorsFile:
@@ -272,3 +279,79 @@ class TestIntervalAndTimeout:
     def test_empty_monitor_list_is_rejected(self) -> None:
         with pytest.raises(ValidationError):
             parse({"monitors": []})
+
+
+class TestTlsMonitors:
+    def test_a_bare_host_defaults_to_443(self) -> None:
+        assert split_tls_target("example.com") == ("example.com", 443)
+
+    def test_an_explicit_port_is_kept(self) -> None:
+        assert split_tls_target("example.com:8443") == ("example.com", 8443)
+
+    def test_a_bare_ipv4_address_defaults_to_443(self) -> None:
+        assert split_tls_target("10.0.0.1") == ("10.0.0.1", 443)
+
+    def test_a_bracketed_ipv6_address_with_a_port(self) -> None:
+        assert split_tls_target("[::1]:8443") == ("::1", 8443)
+
+    @pytest.mark.parametrize("target", ["example.com", "example.com:8443", "10.0.0.1"])
+    def test_valid_targets_are_accepted(self, target: str) -> None:
+        spec = MonitorSpec(name="cert", type=MonitorType.TLS, target=target)
+
+        assert spec.target == target
+
+    @pytest.mark.parametrize(
+        "target",
+        ["https://example.com", "example.com/path", "example.com:0", "example.com:70000"],
+    )
+    def test_invalid_targets_are_rejected(self, target: str) -> None:
+        with pytest.raises(ValidationError):
+            MonitorSpec(name="cert", type=MonitorType.TLS, target=target)
+
+    def test_a_tls_block_is_accepted_on_a_tls_monitor(self) -> None:
+        spec = MonitorSpec(
+            name="cert",
+            type=MonitorType.TLS,
+            target="example.com",
+            tls=TlsOptions(warn_days=30),
+        )
+
+        assert spec.tls is not None
+        assert spec.tls.warn_days == 30
+
+    def test_the_warning_window_defaults_to_a_fortnight(self) -> None:
+        assert TlsOptions().warn_days == 14
+
+    @pytest.mark.parametrize("warn_days", [0, -1])
+    def test_a_nonsense_warning_window_is_rejected(self, warn_days: int) -> None:
+        with pytest.raises(ValidationError):
+            TlsOptions(warn_days=warn_days)
+
+    def test_a_tls_block_on_another_type_is_rejected(self) -> None:
+        """The same rule that already protects the http block."""
+        with pytest.raises(ValidationError, match="only valid for type 'tls'"):
+            MonitorSpec(name="ping", type=MonitorType.ICMP, target="10.0.0.1", tls=TlsOptions())
+
+    def test_an_http_block_on_a_tls_monitor_is_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="only valid for type 'http'"):
+            MonitorSpec(
+                name="cert",
+                type=MonitorType.TLS,
+                target="example.com",
+                http=HttpOptions(),
+            )
+
+    def test_the_block_survives_default_resolution(self) -> None:
+        config = MonitorsFile(
+            monitors=[
+                MonitorSpec(
+                    name="cert",
+                    type=MonitorType.TLS,
+                    target="example.com",
+                    tls=TlsOptions(warn_days=21),
+                )
+            ]
+        ).resolve()[0]
+
+        assert config.tls is not None
+        assert config.tls.warn_days == 21

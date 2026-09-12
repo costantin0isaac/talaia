@@ -4,6 +4,7 @@ from talaia.checks.base import Checker
 from talaia.checks.http import HttpChecker, HttpClients
 from talaia.checks.icmp import IcmpChecker
 from talaia.checks.tcp import TcpChecker
+from talaia.checks.tls import TlsChecker
 from talaia.config.schema import MonitorType
 
 
@@ -30,5 +31,6 @@ def build_registry(clients: HttpClients) -> CheckerRegistry:
             MonitorType.HTTP: HttpChecker(clients),
             MonitorType.ICMP: IcmpChecker(),
             MonitorType.TCP: TcpChecker(),
+            MonitorType.TLS: TlsChecker(),
         }
     )

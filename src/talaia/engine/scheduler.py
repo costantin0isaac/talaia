@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from talaia.checks.base import CheckOutcome
 from talaia.checks.registry import CheckerRegistry
-from talaia.config.schema import HttpOptions, MonitorConfig, MonitorType
+from talaia.config.schema import HttpOptions, MonitorConfig, MonitorType, TlsOptions
 from talaia.db import repository as repo
 from talaia.db.models import Monitor
 from talaia.engine.state import StateChange, StateSnapshot, Transition, evaluate
@@ -46,6 +46,11 @@ def to_monitor_config(monitor: Monitor) -> MonitorConfig:
         if monitor.type is MonitorType.HTTP and monitor.config
         else None
     )
+    tls = (
+        TlsOptions.model_validate(monitor.config)
+        if monitor.type is MonitorType.TLS and monitor.config
+        else None
+    )
     return MonitorConfig(
         name=monitor.name,
         type=monitor.type,
@@ -58,6 +63,7 @@ def to_monitor_config(monitor: Monitor) -> MonitorConfig:
         recovery_threshold=monitor.recovery_threshold,
         enabled=monitor.enabled,
         http=http,
+        tls=tls,
     )
 
 
@@ -122,6 +128,8 @@ async def apply_outcome(
     state.last_checked_at = checked_at
     state.last_latency_ms = outcome.latency_ms
     state.last_error = outcome.error
+    if outcome.expires_in_days is not None:
+        state.last_expires_in_days = outcome.expires_in_days
     if change.transition is not Transition.NONE:
         state.status_changed_at = checked_at
 

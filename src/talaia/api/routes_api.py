@@ -60,6 +60,7 @@ def _state_schema(state: MonitorStateRow | None) -> MonitorState:
             last_latency_ms=None,
             last_error=None,
             status_changed_at=None,
+            last_expires_in_days=None,
         )
     return MonitorState.model_validate(state)
 
@@ -218,6 +219,7 @@ async def metrics(request: Request, session: SessionDep) -> Response:
             status=state.status,
             last_latency_ms=state.last_latency_ms,
             consecutive_failures=state.consecutive_failures,
+            last_expires_in_days=state.last_expires_in_days,
         )
         for monitor, state in await repo.list_states(session)
     ]

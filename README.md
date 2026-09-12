@@ -93,6 +93,13 @@ monitors:
   - name: gitlab-ssh
     type: tcp
     target: 10.0.0.20:22
+
+  - name: talaia-certificate
+    type: tls
+    target: talaia.example.org      # port defaults to 443
+    interval: 3600
+    tls:
+      warn_days: 14                 # fail once fewer than this many days remain
 ```
 
 Unknown keys are a hard error, not a warning.
@@ -349,6 +356,51 @@ curl -c jar -d 'username=isaac&password=...' http://localhost:9999/login
 curl -b jar -X POST http://localhost:9999/api/reload
 ```
 
+## Certificate expiry
+
+A `tls` monitor completes a handshake and reports how much validity the certificate has
+left. It **fails** once fewer than `warn_days` remain, default 14 — which is the point:
+failing is what opens an incident and sends the notification, while there is still time to
+renew.
+
+```yaml
+- name: talaia-certificate
+  type: tls
+  target: talaia.example.org   # or host:port; the port defaults to 443
+  interval: 3600               # certificates do not change minute to minute
+  tls:
+    warn_days: 14
+    server_name: null          # SNI override, when it differs from the host above
+```
+
+The error text says what you need to act on: `certificate expires in 5d`, or
+`certificate expired 3d ago` once it is too late.
+
+Remaining validity is also exported for Grafana, and is negative once the certificate has
+expired:
+
+```
+talaia_certificate_days_remaining{monitor="talaia-certificate",type="tls",group="infra"} 45
+```
+
+Monitors that check no certificate export no series at all, rather than exporting zero —
+zero days remaining is a real and very different condition.
+
+### Certificates are verified, not just read
+
+The handshake uses a normal verifying context, exactly as a browser would. A self-signed
+certificate, an incomplete chain or a hostname mismatch is therefore a **failure**, not a
+reading.
+
+The alternative — disabling verification so the expiry date can be read off any certificate
+— would leave the monitor green through precisely the faults that take a site down. A
+checker called "is my TLS healthy" should not be the one component that accepts a
+certificate nothing else will.
+
+The cost is that this checker cannot watch a self-signed certificate. Use a `tcp` monitor
+for the port and let the certificate go unchecked, or issue it from a CA the container
+trusts.
+
 ## Troubleshooting
 
 ### Every ICMP check fails with a permission error
@@ -374,6 +426,13 @@ To confirm the host allows it:
 ```sh
 docker compose -f compose.dev.yaml exec app sh -c 'cat /proc/sys/net/ipv4/ping_group_range'
 ```
+
+### A TLS monitor fails with `certificate rejected`
+
+Verification is intentionally on. The message names the reason — a self-signed certificate,
+an untrusted issuer or a hostname that does not match. Check the target resolves to the host
+you think, and use `tls.server_name` if the certificate is issued for a different name than
+the one you are connecting to.
 
 ### A monitor is stuck in `unknown`
 

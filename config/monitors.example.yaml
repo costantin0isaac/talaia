@@ -35,6 +35,17 @@ monitors:
     target: 10.0.0.20:22
     group: infra
 
+  # A TLS certificate. Fails once fewer than warn_days of validity remain, which is what
+  # produces the notification while there is still time to renew.
+  - name: example-certificate
+    type: tls
+    target: example.com          # port defaults to 443; host:port also accepted
+    group: infra
+    interval: 3600               # certificates do not change minute to minute
+    tls:
+      warn_days: 14
+      server_name: null          # SNI override, when it differs from the host above
+
   # Configured but not checked, and reported as paused.
   - name: example-disabled
     type: http

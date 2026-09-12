@@ -8,6 +8,7 @@ visible, and monitors that disappear from the file are soft-deleted rather than 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -109,6 +110,12 @@ def _new_monitor(config: MonitorConfig) -> Monitor:
     return monitor
 
 
+def _options(config: MonitorConfig) -> dict[str, Any]:
+    """Return the type-specific block to store in the monitor's ``config`` column."""
+    block = config.http or config.tls
+    return block.model_dump(mode="json") if block is not None else {}
+
+
 def _apply(row: Monitor, config: MonitorConfig) -> bool:
     """Copy configuration onto a row, returning whether anything changed."""
     values = {
@@ -122,7 +129,7 @@ def _apply(row: Monitor, config: MonitorConfig) -> bool:
         "recovery_threshold": config.recovery_threshold,
         "enabled": config.enabled,
         "active": True,
-        "config": config.http.model_dump(mode="json") if config.http else {},
+        "config": _options(config),
     }
     changed = False
     for attribute, value in values.items():

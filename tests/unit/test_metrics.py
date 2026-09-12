@@ -16,6 +16,7 @@ def sample(
     status: MonitorStatus = MonitorStatus.UP,
     last_latency_ms: int | None = 42,
     consecutive_failures: int = 0,
+    last_expires_in_days: int | None = None,
 ) -> MonitorSample:
     return MonitorSample(
         name=name,
@@ -24,6 +25,7 @@ def sample(
         status=status,
         last_latency_ms=last_latency_ms,
         consecutive_failures=consecutive_failures,
+        last_expires_in_days=last_expires_in_days,
     )
 
 
@@ -175,3 +177,39 @@ class TestEmptyInstance:
 
         assert "talaia_build_info" in text
         assert 'talaia_monitors_total{status="up"} 0.0' in text
+
+
+class TestCertificateDays:
+    def test_a_tls_monitor_exports_its_remaining_days(self) -> None:
+        text = render(sample("cert", monitor_type="tls", last_expires_in_days=45))
+
+        assert (
+            'talaia_certificate_days_remaining{group="services",monitor="cert",type="tls"} 45.0'
+            in text
+        )
+
+    def test_an_expired_certificate_exports_a_negative_value(self) -> None:
+        """Below zero is the signal Grafana needs to distinguish 'gone' from 'soon'."""
+        text = render(sample("cert", monitor_type="tls", last_expires_in_days=-3))
+
+        assert series(text, "talaia_certificate_days_remaining")[0].endswith("-3.0")
+
+    def test_monitors_without_a_certificate_export_no_series(self) -> None:
+        """An HTTP monitor has no expiry, and an empty series would read as zero days."""
+        text = render(sample("web"), sample("ping", monitor_type="icmp"))
+
+        assert series(text, "talaia_certificate_days_remaining") == []
+
+    def test_the_metric_is_documented(self) -> None:
+        text = render(sample("cert", monitor_type="tls", last_expires_in_days=45))
+
+        assert "# HELP talaia_certificate_days_remaining" in text
+
+    def test_no_new_label_names_are_introduced(self) -> None:
+        """Label cardinality stays bounded; a hostname must never become a label."""
+        text = render(sample("cert", monitor_type="tls", last_expires_in_days=45))
+
+        for line in series(text, "talaia_certificate_days_remaining"):
+            labels = line[line.index("{") + 1 : line.index("}")]
+            names = {pair.split("=")[0] for pair in labels.split(",")}
+            assert names <= LABEL_NAMES

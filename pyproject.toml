@@ -103,7 +103,7 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "--strict-markers --strict-config -W error::DeprecationWarning"
+addopts = "--strict-markers --strict-config --import-mode=importlib -W error::DeprecationWarning"
 markers = [
     "integration: requires a real PostgreSQL instance via testcontainers (deselect with '-m \"not integration\"')",
 ]

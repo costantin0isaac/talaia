@@ -154,6 +154,28 @@ Always read a generated migration before committing it. Autogenerate reliably mi
 things: it silently dropped the descending order from the `check_results` index that the
 monitor detail page depends on, and that index had to be written by hand.
 
+## Retention
+
+Raw check results are high-volume and short-lived; incidents and daily rollups are
+permanent.
+
+Once an hour a background task refreshes the `daily_uptime` rows for yesterday and today,
+then deletes `check_results` older than `TALAIA_RETENTION_DAYS` (default 30). Rollups are
+written **before** pruning, so a short retention window can never delete the results a
+rollup was about to summarise.
+
+Deletion happens in batches of 10,000, each in its own transaction, so a first prune over a
+large backlog does not hold a lock for minutes.
+
+| Table | Lifetime |
+|---|---|
+| `check_results` | `TALAIA_RETENTION_DAYS`, default 30 |
+| `daily_uptime` | permanent |
+| `incidents` | permanent |
+| `monitors` | permanent, soft-deleted when removed from the YAML |
+
+Days are UTC, matching Prometheus and the log timestamps.
+
 ## Troubleshooting
 
 ### Every ICMP check fails with a permission error

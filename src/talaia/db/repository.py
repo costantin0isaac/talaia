@@ -10,7 +10,7 @@ from typing import Any, Literal, cast
 from sqlalchemy import CursorResult, delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import InstrumentedAttribute
+from sqlalchemy.orm import InstrumentedAttribute, aliased
 
 from talaia.db.models import (
     CheckResult,
@@ -125,6 +125,69 @@ async def list_check_results(
         .limit(limit)
     )
     return (await session.scalars(statement)).all()
+
+
+async def list_latest_results_by_monitor(
+    session: AsyncSession, monitor_ids: Sequence[int], *, limit: int = 40
+) -> dict[int, list[CheckResult]]:
+    """Return the newest ``limit`` results for each monitor, in one query.
+
+    A window function rather than one query per monitor: the dashboard renders every
+    monitor's strip at once, and the per-monitor form would not survive a long list.
+    """
+    if not monitor_ids:
+        return {}
+
+    ranked = (
+        select(
+            CheckResult,
+            func.row_number()
+            .over(
+                partition_by=CheckResult.monitor_id,
+                order_by=CheckResult.checked_at.desc(),
+            )
+            .label("position"),
+        )
+        .where(CheckResult.monitor_id.in_(monitor_ids))
+        .subquery()
+    )
+    result = aliased(CheckResult, ranked)
+    statement = select(result).where(ranked.c.position <= limit).order_by(result.checked_at.desc())
+
+    grouped: dict[int, list[CheckResult]] = {monitor_id: [] for monitor_id in monitor_ids}
+    for row in (await session.scalars(statement)).all():
+        grouped[row.monitor_id].append(row)
+    return grouped
+
+
+async def uptime_ratios(session: AsyncSession, *, since: datetime) -> dict[int, float]:
+    """Return the success ratio of every monitor that has results since ``since``."""
+    statement = (
+        select(
+            CheckResult.monitor_id,
+            func.count(),
+            func.count().filter(CheckResult.success.is_(True)),
+        )
+        .where(CheckResult.checked_at >= since)
+        .group_by(CheckResult.monitor_id)
+    )
+    rows = (await session.execute(statement)).all()
+    return {
+        monitor_id: float(successful) / float(total)
+        for monitor_id, total, successful in rows
+        if total
+    }
+
+
+async def uptime_since_day(session: AsyncSession, monitor_id: int, *, since: date) -> float | None:
+    """Return uptime from the daily rollups, which outlive the pruning of raw results."""
+    statement = select(
+        func.sum(DailyUptime.total_checks), func.sum(DailyUptime.successful_checks)
+    ).where(DailyUptime.monitor_id == monitor_id, DailyUptime.day >= since)
+    total, successful = (await session.execute(statement)).one()
+    if not total:
+        return None
+    return float(successful) / float(total)
 
 
 async def uptime_ratio(session: AsyncSession, monitor_id: int, *, since: datetime) -> float | None:

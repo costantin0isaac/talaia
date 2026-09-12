@@ -1,17 +1,15 @@
 """The contract every notifier implements, and the messages they carry."""
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Literal, Protocol
+
+from talaia.formatting import format_duration, format_timestamp
 
 Priority = Literal["default", "high"]
 
 DOWN_TAG = "rotating_light"
 UP_TAG = "white_check_mark"
-
-SECONDS_PER_MINUTE = 60
-MINUTES_PER_HOUR = 60
-HOURS_PER_DAY = 24
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,28 +49,6 @@ class NullNotifier:
     async def aclose(self) -> None:
         """Nothing to close."""
         return None
-
-
-def format_duration(seconds: int) -> str:
-    """Render a downtime in the two largest units that apply."""
-    if seconds < SECONDS_PER_MINUTE:
-        return f"{seconds}s"
-
-    minutes, remaining_seconds = divmod(seconds, SECONDS_PER_MINUTE)
-    if minutes < MINUTES_PER_HOUR:
-        return f"{minutes}m {remaining_seconds}s" if remaining_seconds else f"{minutes}m"
-
-    hours, remaining_minutes = divmod(minutes, MINUTES_PER_HOUR)
-    if hours < HOURS_PER_DAY:
-        return f"{hours}h {remaining_minutes}m" if remaining_minutes else f"{hours}h"
-
-    days, remaining_hours = divmod(hours, HOURS_PER_DAY)
-    return f"{days}d {remaining_hours}h" if remaining_hours else f"{days}d"
-
-
-def format_timestamp(moment: datetime) -> str:
-    """Render a moment as a UTC wall clock, matching the log timestamps."""
-    return moment.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
 def down_notification(

@@ -1,0 +1,180 @@
+"""HTML endpoints: the dashboard, the monitor detail page and their HTMX partials."""
+
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from talaia.api.dependencies import get_session
+from talaia.db import repository as repo
+from talaia.db.models import Monitor, MonitorStatus
+from talaia.formatting import format_percentage
+from talaia.web import view
+
+TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "web" / "templates"
+STATIC_DIR = Path(__file__).resolve().parent.parent / "web" / "static"
+
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+router = APIRouter(tags=["web"], include_in_schema=False)
+
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+UPTIME_WINDOW_HOURS = 24
+DETAIL_INCIDENTS = 20
+CHART_HOURS = 24
+POLL_SECONDS = 15
+
+
+def wants_html(request: Request) -> bool:
+    """Whether a failure on this path should be rendered as a page rather than JSON.
+
+    HTMX ignores the body of a non-2xx response, so partials are left as JSON too.
+    """
+    path = request.url.path
+    return not path.startswith(("/api", "/partials", "/metrics", "/healthz", "/readyz"))
+
+
+async def not_found(request: Request, exc: StarletteHTTPException) -> HTMLResponse:
+    """Render a 404 as a page for the UI, so a mistyped URL is not a JSON blob."""
+    return templates.TemplateResponse(
+        request,
+        "not_found.html",
+        {"detail": exc.detail},
+        status_code=status.HTTP_404_NOT_FOUND,
+    )
+
+
+@router.get("/", response_class=HTMLResponse)
+async def dashboard(request: Request, session: SessionDep) -> HTMLResponse:
+    """Render every active monitor, grouped, with its status strip."""
+    groups, summary = await _dashboard_state(session)
+    return templates.TemplateResponse(
+        request,
+        "dashboard.html",
+        {"groups": groups, "summary": summary, "poll_seconds": POLL_SECONDS},
+    )
+
+
+@router.get("/partials/summary", response_class=HTMLResponse)
+async def summary_partial(request: Request, session: SessionDep) -> HTMLResponse:
+    """Re-render the summary bar for HTMX."""
+    _, summary = await _dashboard_state(session)
+    return templates.TemplateResponse(
+        request,
+        "partials/summary.html",
+        {"summary": summary, "poll_seconds": POLL_SECONDS},
+    )
+
+
+@router.get("/partials/monitors/{name}/row", response_class=HTMLResponse)
+async def monitor_row_partial(name: str, request: Request, session: SessionDep) -> HTMLResponse:
+    """Re-render one dashboard row for HTMX, which swaps it in place."""
+    monitor = await _require_monitor(session, name)
+    since = datetime.now(UTC) - timedelta(hours=UPTIME_WINDOW_HOURS)
+    results = await repo.list_latest_results_by_monitor(session, [monitor.id])
+    row = view.monitor_row(
+        monitor,
+        await repo.get_state(session, monitor.id),
+        results=results.get(monitor.id, []),
+        uptime_24h=await repo.uptime_ratio(session, monitor.id, since=since),
+    )
+    return templates.TemplateResponse(
+        request,
+        "partials/monitor_row.html",
+        {"row": row, "poll_seconds": POLL_SECONDS},
+    )
+
+
+@router.get("/monitors/{name}", response_class=HTMLResponse)
+async def monitor_detail(name: str, request: Request, session: SessionDep) -> HTMLResponse:
+    """Render one monitor's configuration, uptime, latency chart and incidents."""
+    monitor = await _require_monitor(session, name)
+    now = datetime.now(UTC)
+    since = now - timedelta(hours=UPTIME_WINDOW_HOURS)
+    today = now.date()
+
+    strip = await repo.list_latest_results_by_monitor(session, [monitor.id])
+    chart_results = await repo.list_check_results(
+        session, monitor.id, since=now - timedelta(hours=CHART_HOURS)
+    )
+    incidents = await repo.list_incidents(session, monitor_id=monitor.id, limit=DETAIL_INCIDENTS)
+
+    detail = view.MonitorDetailView(
+        row=view.monitor_row(
+            monitor,
+            await repo.get_state(session, monitor.id),
+            results=strip.get(monitor.id, []),
+            uptime_24h=await repo.uptime_ratio(session, monitor.id, since=since),
+        ),
+        description=monitor.description,
+        interval_seconds=monitor.interval_seconds,
+        timeout_seconds=monitor.timeout_seconds,
+        failure_threshold=monitor.failure_threshold,
+        recovery_threshold=monitor.recovery_threshold,
+        enabled=monitor.enabled,
+        active=monitor.active,
+        group=monitor.group_name,
+        uptime_7d=format_percentage(
+            await repo.uptime_since_day(session, monitor.id, since=today - timedelta(days=6))
+        ),
+        uptime_30d=format_percentage(
+            await repo.uptime_since_day(session, monitor.id, since=today - timedelta(days=29))
+        ),
+        chart=view.latency_chart(chart_results),
+        incidents=view.incident_rows(incidents, now=now),
+    )
+
+    return templates.TemplateResponse(
+        request,
+        "monitor_detail.html",
+        {"detail": detail, "chart_hours": CHART_HOURS},
+    )
+
+
+async def _dashboard_state(session: AsyncSession) -> tuple[tuple[view.Group, ...], view.SummaryBar]:
+    """Build the whole dashboard in a fixed number of queries, whatever the monitor count."""
+    pairs = await repo.list_states(session)
+    since = datetime.now(UTC) - timedelta(hours=UPTIME_WINDOW_HOURS)
+
+    monitor_ids = [monitor.id for monitor, _ in pairs]
+    strips = await repo.list_latest_results_by_monitor(session, monitor_ids)
+    ratios = await repo.uptime_ratios(session, since=since)
+
+    rows = [
+        view.monitor_row(
+            monitor,
+            state,
+            results=strips.get(monitor.id, []),
+            uptime_24h=ratios.get(monitor.id),
+        )
+        for monitor, state in pairs
+    ]
+    groups = view.group_rows(rows, {monitor.name: monitor.group_name for monitor, _ in pairs})
+
+    counts = await repo.count_by_status(session)
+    summary = view.SummaryBar(
+        total=sum(counts.values()),
+        up=counts.get(MonitorStatus.UP, 0),
+        down=counts.get(MonitorStatus.DOWN, 0),
+        unknown=counts.get(MonitorStatus.UNKNOWN, 0),
+        paused=counts.get(MonitorStatus.PAUSED, 0),
+        open_incidents=await repo.count_open_incidents(session),
+        uptime_24h=format_percentage(await repo.overall_uptime_ratio(session, since=since)),
+    )
+    return groups, summary
+
+
+async def _require_monitor(session: AsyncSession, name: str) -> Monitor:
+    """Return the named monitor, or raise a 404 the error page can render."""
+    monitor = await repo.get_monitor_by_name(session, name)
+    if monitor is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"no monitor named {name!r}"
+        )
+    return monitor

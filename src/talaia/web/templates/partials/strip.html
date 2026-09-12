@@ -1,0 +1,5 @@
+<span class="strip" role="img" aria-label="recent checks, oldest first">
+  {%- for segment in row.segments -%}
+    <span class="segment segment-{{ segment.state }}" title="{{ segment.title }}"></span>
+  {%- endfor -%}
+</span>

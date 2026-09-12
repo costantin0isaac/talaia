@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "partials/summary.html" %}
+
+{% if not groups %}
+  <p class="empty">
+    No monitors configured. Add them to <code>config/monitors.yaml</code> and either restart
+    or <code>POST /api/reload</code>.
+  </p>
+{% endif %}
+
+{% for group in groups %}
+<section class="group">
+  <h2 class="group-name">{{ group.name }}</h2>
+  <table class="monitors">
+    <thead>
+      <tr>
+        <th class="cell-status"><span class="visually-hidden">Status</span></th>
+        <th class="cell-name">Monitor</th>
+        <th class="cell-target">Target</th>
+        <th class="cell-latency">Latency</th>
+        <th class="cell-uptime">24h</th>
+        <th class="cell-strip">Recent checks</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in group.rows %}
+        {% include "partials/monitor_row.html" %}
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endfor %}
+{% endblock %}

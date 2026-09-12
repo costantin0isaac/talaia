@@ -7,6 +7,10 @@ TALAIA.md
 !.env.example
 .ansible_vault_pass
 
+# Real monitor configuration: private homelab addresses, never committed.
+# The committed config/monitors.yaml keeps placeholder targets and is the CI fixture.
+config/monitors.local.yaml
+
 # Python
 __pycache__/
 *.py[cod]

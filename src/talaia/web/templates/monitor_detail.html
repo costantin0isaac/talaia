@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% set row = detail.row %}
 
-{% block title %}{{ row.name }} — Talaia{% endblock %}
+{% block title %}{{ row.name }} — talaia{% endblock %}
 
 {% block content %}
 <nav class="breadcrumb"><a href="/">Dashboard</a> <span>/</span> <span>{{ row.name }}</span></nav>
@@ -31,26 +31,56 @@
 <section class="panel">
   <h2>Recent checks</h2>
   {% include "partials/strip.html" %}
+  {% if row.strip_span %}<span class="muted strip-span">{{ row.strip_span }}</span>{% endif %}
   <p class="muted">Last checked {{ row.last_checked }}.</p>
   {% if row.last_error %}<p class="error-box">{{ row.last_error }}</p>{% endif %}
 </section>
 
 <section class="panel">
   <h2>Latency, last {{ chart_hours }}h</h2>
+  <div class="windows">
+    {% for window in chart_windows %}
+      <a href="/monitors/{{ row.name }}?hours={{ window }}"
+         {% if window == chart_hours %}aria-current="page"{% endif %}>
+        {{ window }}h
+      </a>
+    {% endfor %}
+  </div>
   {% if detail.chart.has_data %}
   <svg class="chart" viewBox="0 0 {{ detail.chart.width }} {{ detail.chart.height }}"
-       role="img" aria-label="latency over the last {{ chart_hours }} hours"
-       preserveAspectRatio="none">
-    <line class="chart-axis" x1="0" y1="{{ detail.chart.height - 8 }}"
-          x2="{{ detail.chart.width }}" y2="{{ detail.chart.height - 8 }}"></line>
+       role="img" aria-label="latency in milliseconds over the last {{ chart_hours }} hours">
+    <g class="chart-grid">
+      {% for tick in detail.chart.latency_ticks %}
+        <line x1="{{ detail.chart.plot_left }}" y1="{{ tick.position }}"
+              x2="{{ detail.chart.plot_right }}" y2="{{ tick.position }}"></line>
+        <text class="chart-tick chart-tick-y" x="{{ detail.chart.plot_left - 8 }}"
+              y="{{ tick.position }}">{{ tick.label }}</text>
+      {% endfor %}
+      {% for tick in detail.chart.time_ticks %}
+        <text class="chart-tick chart-tick-x" x="{{ tick.position }}"
+              y="{{ detail.chart.plot_bottom + 18 }}">{{ tick.label }}</text>
+      {% endfor %}
+    </g>
+
+    <text class="chart-axis-label" x="{{ detail.chart.plot_left - 8 }}"
+          y="{{ detail.chart.plot_top - 2 }}">ms</text>
+    <text class="chart-axis-label chart-axis-label-x" x="{{ detail.chart.plot_right }}"
+          y="{{ detail.chart.height - 4 }}">UTC</text>
+
+    <line class="chart-axis" x1="{{ detail.chart.plot_left }}" y1="{{ detail.chart.plot_bottom }}"
+          x2="{{ detail.chart.plot_right }}" y2="{{ detail.chart.plot_bottom }}"></line>
+    <line class="chart-axis" x1="{{ detail.chart.plot_left }}" y1="{{ detail.chart.plot_top }}"
+          x2="{{ detail.chart.plot_left }}" y2="{{ detail.chart.plot_bottom }}"></line>
+
     {% for x in detail.chart.failures %}
-      <line class="chart-failure" x1="{{ x }}" y1="8" x2="{{ x }}" y2="{{ detail.chart.height - 8 }}"></line>
+      <line class="chart-failure" x1="{{ x }}" y1="{{ detail.chart.plot_top }}"
+            x2="{{ x }}" y2="{{ detail.chart.plot_bottom }}"></line>
     {% endfor %}
     {% if detail.chart.polyline %}
       <polyline class="chart-line" points="{{ detail.chart.polyline }}"></polyline>
     {% endif %}
     {% for point in detail.chart.points %}
-      <circle class="chart-point" cx="{{ point.x }}" cy="{{ point.y }}" r="1.6">
+      <circle class="chart-point" cx="{{ point.x }}" cy="{{ point.y }}" r="1.8">
         <title>{{ point.label }}</title>
       </circle>
     {% endfor %}

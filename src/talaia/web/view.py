@@ -4,9 +4,9 @@ Everything the templates need is computed here, so the markup only interpolates 
 The functions are pure, which is what makes the presentation layer testable at all.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal
 
 from talaia.db.models import CheckResult, Incident, Monitor, MonitorState, MonitorStatus
@@ -15,8 +15,14 @@ from talaia.formatting import format_duration, format_latency, format_percentage
 STRIP_SIZE = 40
 
 CHART_WIDTH = 720
-CHART_HEIGHT = 180
-CHART_PADDING = 8
+CHART_HEIGHT = 200
+
+# Gutters for the axis labels. Left is wide enough for a four-digit millisecond value,
+# bottom for a HH:MM clock.
+CHART_LEFT = 52
+CHART_RIGHT = 12
+CHART_TOP = 12
+CHART_BOTTOM = 28
 
 SegmentState = Literal["ok", "fail", "empty"]
 
@@ -43,6 +49,7 @@ class MonitorRow:
     last_checked: str
     last_error: str | None
     certificate: str | None
+    strip_span: str | None
     segments: tuple[Segment, ...]
 
 
@@ -52,6 +59,16 @@ class Group:
 
     name: str
     rows: tuple[MonitorRow, ...]
+
+    @property
+    def summary(self) -> str:
+        """A one-line count, so a group header says where to look before you scan it."""
+        counts: dict[str, int] = {}
+        for row in self.rows:
+            counts[row.status] = counts.get(row.status, 0) + 1
+        order = ("down", "unknown", "paused", "up")
+        parts = [f"{counts[status]} {status}" for status in order if counts.get(status)]
+        return " · ".join(parts)
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +82,7 @@ class SummaryBar:
     paused: int
     open_incidents: int
     uptime_24h: str
+    updated_at: datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +91,14 @@ class ChartPoint:
 
     x: float
     y: float
+    label: str
+
+
+@dataclass(frozen=True, slots=True)
+class Tick:
+    """One labelled position on an axis."""
+
+    position: float
     label: str
 
 
@@ -87,6 +113,12 @@ class LatencyChart:
     failures: tuple[float, ...]
     max_latency: int
     sample_count: int
+    latency_ticks: tuple[Tick, ...] = ()
+    time_ticks: tuple[Tick, ...] = ()
+    plot_left: float = CHART_LEFT
+    plot_right: float = CHART_WIDTH - CHART_RIGHT
+    plot_top: float = CHART_TOP
+    plot_bottom: float = CHART_HEIGHT - CHART_BOTTOM
 
     @property
     def has_data(self) -> bool:
@@ -147,6 +179,16 @@ def _segment_title(result: CheckResult) -> str:
     return f"{when} · {result.error or 'failed'}"
 
 
+def format_span(oldest: datetime, newest: datetime) -> str:
+    """Describe what a status strip actually covers.
+
+    Forty segments say nothing about whether they span forty minutes or forty hours.
+    """
+    if oldest == newest:
+        return f"one check at {format_timestamp(newest)}"
+    return f"{format_timestamp(oldest)} \u2192 {format_timestamp(newest)}"
+
+
 def format_certificate(expires_in_days: int | None) -> str | None:
     """Render remaining certificate validity, or ``None`` for a monitor that has none."""
     if expires_in_days is None:
@@ -168,6 +210,7 @@ def monitor_row(
     latency = state.last_latency_ms if state is not None else None
     checked_at = state.last_checked_at if state is not None else None
     expires_in = state.last_expires_in_days if state is not None else None
+    recorded = [result.checked_at for result in results]
     return MonitorRow(
         name=monitor.name,
         type=monitor.type.value,
@@ -179,6 +222,7 @@ def monitor_row(
         last_checked=format_timestamp(checked_at) if checked_at else "never",
         last_error=state.last_error if state is not None else None,
         certificate=format_certificate(expires_in),
+        strip_span=format_span(min(recorded), max(recorded)) if recorded else None,
         segments=status_strip(results),
     )
 
@@ -209,6 +253,9 @@ def latency_chart(
     successes = [result for result in ordered if result.success and result.latency_ms is not None]
     failures = [result for result in ordered if not result.success]
 
+    left, right = float(CHART_LEFT), float(width - CHART_RIGHT)
+    top, bottom = float(CHART_TOP), float(height - CHART_BOTTOM)
+
     if not ordered:
         return LatencyChart(
             width=width,
@@ -218,21 +265,28 @@ def latency_chart(
             failures=(),
             max_latency=0,
             sample_count=0,
+            plot_left=left,
+            plot_right=right,
+            plot_top=top,
+            plot_bottom=bottom,
         )
 
     max_latency = max((result.latency_ms or 0 for result in successes), default=0) or 1
     span = _time_span(ordered)
-    plot_width = width - 2 * CHART_PADDING
-    plot_height = height - 2 * CHART_PADDING
+    plot_width = right - left
+    plot_height = bottom - top
 
     def x_for(moment: datetime) -> float:
         offset = (moment - ordered[0].checked_at).total_seconds()
-        return CHART_PADDING + plot_width * (offset / span)
+        return left + plot_width * (offset / span)
+
+    def y_for(latency_ms: int) -> float:
+        return top + plot_height * (1 - latency_ms / max_latency)
 
     points = tuple(
         ChartPoint(
             x=round(x_for(result.checked_at), 2),
-            y=round(CHART_PADDING + plot_height * (1 - (result.latency_ms or 0) / max_latency), 2),
+            y=round(y_for(result.latency_ms or 0), 2),
             label=_segment_title(result),
         )
         for result in successes
@@ -246,7 +300,31 @@ def latency_chart(
         failures=tuple(round(x_for(result.checked_at), 2) for result in failures),
         max_latency=max_latency,
         sample_count=len(ordered),
+        latency_ticks=_latency_ticks(max_latency, y_for),
+        time_ticks=_time_ticks(ordered, x_for),
+        plot_left=left,
+        plot_right=right,
+        plot_top=top,
+        plot_bottom=bottom,
     )
+
+
+def _latency_ticks(max_latency: int, y_for: Callable[[int], float]) -> tuple[Tick, ...]:
+    """Three gridlines: nothing, half, and the peak."""
+    values = sorted({0, max_latency // 2, max_latency})
+    return tuple(Tick(position=round(y_for(value), 2), label=str(value)) for value in values)
+
+
+def _time_ticks(
+    results: Sequence[CheckResult], x_for: Callable[[datetime], float]
+) -> tuple[Tick, ...]:
+    """Oldest, middle and newest, as a wall clock."""
+    moments = [results[0].checked_at, results[len(results) // 2].checked_at, results[-1].checked_at]
+    seen: dict[float, Tick] = {}
+    for moment in moments:
+        position = round(x_for(moment), 2)
+        seen[position] = Tick(position=position, label=moment.astimezone(UTC).strftime("%H:%M"))
+    return tuple(seen.values())
 
 
 def _time_span(results: Sequence[CheckResult]) -> float:

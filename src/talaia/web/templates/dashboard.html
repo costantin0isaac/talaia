@@ -3,6 +3,16 @@
 {% block content %}
 {% include "partials/summary.html" %}
 
+<div class="filters" role="group" aria-label="Filter monitors by status">
+  {% for value, label in [("all", "All"), ("down", "Down"), ("unknown", "Unknown"),
+                          ("paused", "Paused"), ("up", "Up")] %}
+    <button type="button" class="filter" data-filter-value="{{ value }}"
+            aria-pressed="{{ 'true' if value == 'all' else 'false' }}">{{ label }}</button>
+  {% endfor %}
+</div>
+
+<p class="empty filtered-empty">Nothing matches that filter.</p>
+
 {% if not groups %}
   <p class="empty">
     No monitors configured. Add them to <code>config/monitors.yaml</code> and either restart
@@ -12,7 +22,10 @@
 
 {% for group in groups %}
 <section class="group">
-  <h2 class="group-name">{{ group.name }}</h2>
+  <h2 class="group-name">
+    {{ group.name }}
+    <span class="group-summary">{{ group.summary }}</span>
+  </h2>
   <table class="monitors">
     <thead>
       <tr>

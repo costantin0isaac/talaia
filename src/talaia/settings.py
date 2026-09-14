@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     ntfy_topic: str | None = None
     ntfy_token: str | None = None
 
+    grafana_url: str | None = Field(
+        default=None,
+        description="Grafana instance to link to from the masthead. Hidden when unset.",
+    )
+
     base_url: str = Field(
         default="http://localhost:9999",
         description="Public base URL of this instance, used for links in notifications.",

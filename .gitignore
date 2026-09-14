@@ -31,3 +31,8 @@ htmlcov/
 .idea/
 .vscode/
 .DS_Store
+
+# Brand source material: exports and the standalone brand sheet. The assets that the
+# application and the README actually use are committed under src/talaia/web/static and
+# docs/, so this directory is working material only.
+design/

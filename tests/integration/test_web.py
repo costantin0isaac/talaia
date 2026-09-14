@@ -1,5 +1,6 @@
 """The dashboard and detail pages, rendered against a real database."""
 
+import re
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 
@@ -365,6 +366,34 @@ class TestStaticFiles:
         assert response.status_code == 200
         assert "text/css" in response.headers["content-type"]
 
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/static/favicon.svg",
+            "/static/favicon-16.png",
+            "/static/favicon-32.png",
+            "/static/favicon-48.png",
+            "/static/apple-touch-icon.png",
+            "/static/mark.svg",
+        ],
+    )
+    async def test_the_brand_assets_are_served(self, client: httpx.AsyncClient, path: str) -> None:
+        response = await client.get(path)
+
+        assert response.status_code == 200
+
+    async def test_the_favicon_adapts_to_the_browser_theme(self, client: httpx.AsyncClient) -> None:
+        """A bare currentColor renders black, which is invisible on a dark browser tab."""
+        response = await client.get("/static/favicon.svg")
+
+        assert "prefers-color-scheme: dark" in response.text
+
+    async def test_pages_declare_a_favicon(self, anonymous: httpx.AsyncClient) -> None:
+        response = await anonymous.get("/login")
+
+        assert 'rel="icon"' in response.text
+        assert "/static/favicon.svg" in response.text
+
 
 class TestNotFoundPage:
     async def test_a_missing_page_renders_as_html(self, client: httpx.AsyncClient) -> None:
@@ -462,3 +491,321 @@ class TestCertificateDisplay:
         response = await client.get("/monitors/web")
 
         assert "expires in" not in response.text
+
+
+class TestTheme:
+    async def test_the_page_does_not_hardcode_a_theme(self, anonymous: httpx.AsyncClient) -> None:
+        """With no attribute, the operating system preference decides."""
+        response = await anonymous.get("/login")
+
+        assert '<html lang="en">' in response.text
+
+    async def test_the_toggle_is_offered(self, anonymous: httpx.AsyncClient) -> None:
+        response = await anonymous.get("/login")
+
+        assert 'id="theme-toggle"' in response.text
+        assert 'aria-label="Switch between the light and dark theme"' in response.text
+
+    async def test_the_choice_is_applied_before_first_paint(
+        self, anonymous: httpx.AsyncClient
+    ) -> None:
+        """Applying it later would flash the wrong theme on every navigation."""
+        response = await anonymous.get("/login")
+
+        head = response.text[: response.text.index("</head>")]
+        assert "talaia-theme" in head
+
+    async def test_both_palettes_are_defined(self, client: httpx.AsyncClient) -> None:
+        response = await client.get("/static/style.css")
+
+        assert ":root {" in response.text
+        assert "prefers-color-scheme: dark" in response.text
+        assert ':root[data-theme="dark"]' in response.text
+
+    async def test_no_colour_is_defined_only_inside_a_media_query(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """Every token needs a value before any media query, or the light theme is bare."""
+        text = (await client.get("/static/style.css")).text
+        base = text[text.index(":root {") : text.index("@media")]
+
+        for token in ("--bg", "--text", "--accent", "--up", "--down", "--paused", "--unknown"):
+            assert f"{token}:" in base, f"{token} has no light-theme value"
+
+
+class TestGrafanaLink:
+    async def test_it_is_hidden_when_unset(self, client: httpx.AsyncClient) -> None:
+        response = await client.get("/")
+
+        assert ">Grafana<" not in response.text
+
+    async def test_it_appears_when_configured(
+        self, app: FastAPI, client: httpx.AsyncClient
+    ) -> None:
+        app.state.settings = Settings(  # type: ignore[call-arg]
+            _env_file=None,
+            database_url=app.state.settings.database_url,
+            grafana_url="https://grafana.example.org",
+        )
+
+        response = await client.get("/")
+
+        assert 'href="https://grafana.example.org"' in response.text
+        assert ">Grafana<" in response.text
+
+
+class TestChartAxes:
+    async def test_the_axes_are_labelled(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        monitor = await make_monitor(session, "web")
+        await make_results(session, monitor, "ssss")
+
+        response = await client.get("/monitors/web")
+
+        assert "chart-tick-y" in response.text
+        assert "chart-tick-x" in response.text
+        assert ">ms<" in response.text
+        assert ">UTC<" in response.text
+
+    async def test_the_accessible_name_says_what_is_plotted(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        monitor = await make_monitor(session, "web")
+        await make_results(session, monitor, "ss")
+
+        response = await client.get("/monitors/web")
+
+        assert "latency in milliseconds over the last 24 hours" in response.text
+
+
+class TestWordmark:
+    @pytest.mark.parametrize("path", ["/", "/login"])
+    async def test_the_tab_title_is_lowercase(self, client: httpx.AsyncClient, path: str) -> None:
+        response = await client.get(path)
+
+        assert "<title>" in response.text
+        title = response.text.split("<title>")[1].split("</title>")[0]
+        assert "talaia" in title
+        assert "Talaia" not in title
+
+
+class TestStaticCaching:
+    async def test_static_files_say_how_long_to_cache(self, client: httpx.AsyncClient) -> None:
+        """Without this, browsers guess and an edited stylesheet takes hours to appear."""
+        response = await client.get("/static/style.css")
+
+        assert "max-age=31536000" in response.headers["cache-control"]
+        assert "immutable" in response.headers["cache-control"]
+
+    async def test_asset_urls_carry_a_version_stamp(self, anonymous: httpx.AsyncClient) -> None:
+        """A year-long cache is only safe because a changed file is a different URL."""
+        response = await anonymous.get("/login")
+
+        assert re.search(r"/static/style\.css\?v=\d+", response.text)
+        assert re.search(r"/static/htmx\.min\.js\?v=\d+", response.text)
+
+    async def test_the_stamp_follows_the_file(self, anonymous: httpx.AsyncClient) -> None:
+        from talaia.web.templates_env import STATIC_DIR, static_url
+
+        stamp = int((STATIC_DIR / "style.css").stat().st_mtime)
+
+        assert static_url("style.css") == f"/static/style.css?v={stamp}"
+
+    async def test_a_missing_file_still_produces_a_url(self) -> None:
+        from talaia.web.templates_env import static_url
+
+        assert static_url("nope.css") == "/static/nope.css"
+
+
+class TestDashboardFilter:
+    async def test_the_filter_buttons_are_offered(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        await make_monitor(session, "web")
+
+        response = await client.get("/")
+
+        for value in ("all", "down", "unknown", "paused", "up"):
+            assert f'data-filter-value="{value}"' in response.text
+
+    async def test_rows_carry_their_status(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        """Filtering is done in CSS against this attribute, so HTMX swaps obey it."""
+        await make_monitor(session, "web", status=MonitorStatus.DOWN)
+
+        response = await client.get("/")
+
+        assert 'data-status="down"' in response.text
+
+    async def test_the_row_partial_carries_it_too(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        await make_monitor(session, "web", status=MonitorStatus.DOWN)
+
+        response = await client.get("/partials/monitors/web/row")
+
+        assert 'data-status="down"' in response.text
+
+    async def test_there_is_an_empty_state(self, client: httpx.AsyncClient) -> None:
+        response = await client.get("/")
+
+        assert "Nothing matches that filter." in response.text
+
+
+class TestGroupSummary:
+    async def test_the_header_counts_its_monitors(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        await make_monitor(session, "one", group="infra")
+        await make_monitor(session, "two", group="infra", status=MonitorStatus.DOWN)
+
+        response = await client.get("/")
+
+        assert "1 down · 1 up" in response.text
+
+
+class TestFreshness:
+    async def test_the_summary_reports_when_it_last_updated(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """A dashboard whose polling has stopped otherwise looks perfectly healthy."""
+        response = await client.get("/")
+
+        assert 'class="stat-value freshness"' in response.text
+        assert re.search(r'data-updated="\d{10}"', response.text)
+
+    async def test_the_partial_refreshes_it(self, client: httpx.AsyncClient) -> None:
+        response = await client.get("/partials/summary")
+
+        assert "data-updated=" in response.text
+
+
+class TestChartWindow:
+    async def test_the_default_window_is_24_hours(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        await make_monitor(session, "web")
+
+        response = await client.get("/monitors/web")
+
+        assert "Latency, last 24h" in response.text
+
+    async def test_the_window_can_be_changed(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        await make_monitor(session, "web")
+
+        response = await client.get("/monitors/web", params={"hours": 168})
+
+        assert "Latency, last 168h" in response.text
+        assert 'aria-current="page"' in response.text
+
+    async def test_the_window_bounds_a_query(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        monitor = await make_monitor(session, "web")
+        await repo.record_check_result(
+            session,
+            monitor_id=monitor.id,
+            checked_at=NOW - timedelta(hours=40),
+            success=True,
+            latency_ms=20,
+        )
+
+        narrow = await client.get("/monitors/web", params={"hours": 1})
+        wide = await client.get("/monitors/web", params={"hours": 168})
+
+        assert "No checks recorded in this window yet." in narrow.text
+        assert "<svg" in wide.text
+
+    @pytest.mark.parametrize("hours", [0, -1, 721])
+    async def test_an_out_of_range_window_is_rejected(
+        self, client: httpx.AsyncClient, session: AsyncSession, hours: int
+    ) -> None:
+        await make_monitor(session, "web")
+
+        response = await client.get("/monitors/web", params={"hours": hours})
+
+        assert response.status_code == 422
+
+
+class TestStripSpan:
+    async def test_the_strip_says_what_it_covers(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        """Forty segments say nothing about whether they span forty minutes or hours."""
+        monitor = await make_monitor(session, "web")
+        await make_results(session, monitor, "ssss")
+
+        response = await client.get("/monitors/web")
+
+        assert "strip-span" in response.text
+        assert "→" in response.text
+
+
+class TestIncidentsPage:
+    async def test_it_lists_incidents_across_monitors(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        one = await make_monitor(session, "one")
+        two = await make_monitor(session, "two")
+        await repo.open_incident(
+            session, monitor_id=one.id, started_at=NOW - timedelta(hours=2), cause="older"
+        )
+        await repo.open_incident(
+            session, monitor_id=two.id, started_at=NOW - timedelta(hours=1), cause="newer"
+        )
+        await session.flush()
+
+        response = await client.get("/incidents")
+
+        assert response.status_code == 200
+        assert response.text.index("newer") < response.text.index("older")
+
+    async def test_open_only_filters(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        monitor = await make_monitor(session, "web")
+        resolved = await repo.open_incident(
+            session, monitor_id=monitor.id, started_at=NOW - timedelta(hours=3), cause="over"
+        )
+        await repo.resolve_incident(session, resolved, NOW - timedelta(hours=2))
+        await session.flush()
+
+        response = await client.get("/incidents", params={"open": "true"})
+
+        assert "over" not in response.text
+        assert "Nothing is down right now." in response.text
+
+    async def test_it_links_to_each_monitor(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        monitor = await make_monitor(session, "web")
+        await repo.open_incident(session, monitor_id=monitor.id, started_at=NOW, cause="timeout")
+        await session.flush()
+
+        response = await client.get("/incidents")
+
+        assert 'href="/monitors/web"' in response.text
+
+    async def test_it_is_in_the_masthead(self, client: httpx.AsyncClient) -> None:
+        response = await client.get("/")
+
+        assert 'href="/incidents"' in response.text
+
+    async def test_it_needs_a_session(self, anonymous: httpx.AsyncClient) -> None:
+        response = await anonymous.get("/incidents")
+
+        assert response.status_code == 303
+
+
+class TestStatusShape:
+    async def test_status_is_not_carried_by_colour_alone(self, client: httpx.AsyncClient) -> None:
+        """Roughly one man in twelve cannot separate the green from the red."""
+        response = await client.get("/static/style.css")
+
+        assert "border-radius: 2px" in response.text  # down is a square
+        assert "rotate(45deg)" in response.text  # paused is a diamond
+        assert "border: 2px solid var(--unknown)" in response.text  # unknown is hollow

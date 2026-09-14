@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import Depends, FastAPI, Request, Response, status
 from fastapi.exception_handlers import http_exception_handler
-from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from talaia import __version__
@@ -28,6 +27,7 @@ from talaia.metrics.registry import Metrics
 from talaia.notify.base import Notifier, NullNotifier
 from talaia.notify.ntfy import NtfyNotifier
 from talaia.settings import Settings, get_settings
+from talaia.web.static_files import CachedStaticFiles
 from talaia.web.templates_env import STATIC_DIR
 
 log = get_logger(__name__)
@@ -120,7 +120,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = resolved
     app.state.metrics = Metrics(version=__version__, commit=resolved.commit)
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    app.mount("/static", CachedStaticFiles(directory=STATIC_DIR), name="static")
 
     # Unauthenticated by design: the probes and /metrics are scraped by machines, and the
     # login routes are how anyone gets a session in the first place.

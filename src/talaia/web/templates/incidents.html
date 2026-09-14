@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Incidents — talaia{% endblock %}
+
+{% block content %}
+<nav class="breadcrumb"><a href="/">Dashboard</a> <span>/</span> <span>Incidents</span></nav>
+
+<header class="detail-head">
+  <h1>Incidents</h1>
+  <p class="detail-description">
+    Every outage across every monitor, newest first. Incidents are kept forever, even for
+    monitors that have since been removed from the configuration.
+  </p>
+</header>
+
+<div class="filters">
+  <a class="filter" href="/incidents" aria-pressed="{{ 'false' if only_open else 'true' }}">All</a>
+  <a class="filter" href="/incidents?open=true"
+     aria-pressed="{{ 'true' if only_open else 'false' }}">Open only</a>
+</div>
+
+<section class="panel">
+  {% if incidents %}
+  <table class="incidents">
+    <thead>
+      <tr><th>Monitor</th><th>Started</th><th>Resolved</th><th>Duration</th><th>Cause</th></tr>
+    </thead>
+    <tbody>
+      {% for name, incident in incidents %}
+      <tr {% if incident.ongoing %}class="ongoing"{% endif %}>
+        <td><a href="/monitors/{{ name }}">{{ name }}</a></td>
+        <td>{{ incident.started_at }}</td>
+        <td>{{ incident.resolved_at }}</td>
+        <td>{{ incident.duration }}{% if incident.ongoing %} and counting{% endif %}</td>
+        <td>{{ incident.cause }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">
+    {% if only_open %}Nothing is down right now.{% else %}No incidents recorded.{% endif %}
+  </p>
+  {% endif %}
+</section>
+{% endblock %}

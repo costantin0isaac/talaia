@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Talaia">
+  <style>
+    :root { color: #12100e; }
+    @media (prefers-color-scheme: dark) { :root { color: #e6e0d6; } }
+  </style>
+  <polygon points="7,12 25,12 28,7.5 28,4 22.5,4 22.5,7.5 18.5,7.5 18.5,4 13.5,4 13.5,7.5 9.5,7.5 9.5,4 4,4 4,7.5" fill="currentColor"></polygon>
+  <polygon points="9,12 23,12 24.5,29 7.5,29" fill="currentColor"></polygon>
+  <rect x="11.5" y="17" width="4" height="7" fill="#e8743c"></rect>
+</svg>

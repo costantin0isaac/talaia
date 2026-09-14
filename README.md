@@ -441,6 +441,94 @@ the one you are connecting to.
 three minutes to report `down`. That is deliberate: it is what stops a single blip from
 raising an alarm.
 
+## Deploying
+
+Production runs the image CI built, not a local build, so what runs is what was tested.
+
+### Once, on the host
+
+```sh
+sudo mkdir -p /opt/talaia && sudo chown "$USER" /opt/talaia
+git clone <repo-url> /opt/talaia
+cd /opt/talaia
+cp .env.example .env
+```
+
+Fill in `.env`. The three that have no sensible default:
+
+```sh
+TALAIA_IMAGE=<registry-host>/<namespace>/talaia   # no tag here
+TALAIA_TAG=latest
+POSTGRES_PASSWORD=<generate one>
+```
+
+`TALAIA_DATABASE_URL` is **not** read from `.env` in production — `compose.prod.yaml` builds
+it from `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB` so the app and the database can
+never disagree about the credentials.
+
+Put the real monitor configuration at `/opt/talaia/config/monitors.local.yaml`. That name
+is git-ignored, which is the point: `config/monitors.yaml` is **tracked** and carries
+placeholder targets, so the `git reset --hard` in every upgrade would overwrite it. The
+default `TALAIA_CONFIG_PATH` already points at the local file; set `TALAIA_CONFIG_DIR` in
+`.env` if you would rather keep the configuration outside the checkout entirely.
+
+Then:
+
+```sh
+docker login <registry-host>
+docker compose -f compose.prod.yaml pull
+docker compose -f compose.prod.yaml up -d
+docker compose -f compose.prod.yaml logs -f app
+```
+
+Migrations run in the entrypoint before uvicorn binds, so the schema is never behind the
+code. The first start creates the database and applies every migration.
+
+### Create the first user
+
+There is no sign-up page, and starting with no users logs a warning and serves a login
+nobody can pass:
+
+```sh
+docker compose -f compose.prod.yaml exec app python -m talaia.auth add <username>
+```
+
+### Behind a reverse proxy
+
+If the proxy runs on a **different host**, Talaia must publish its port — container-to-
+container DNS does not cross hosts. `compose.prod.yaml` publishes 9999 for exactly that.
+
+**Block `/metrics` at the proxy.** It is unauthenticated by design, for Prometheus on the
+LAN, and it names every monitor, group and target you have. Publishing the domain without
+this hands your infrastructure inventory to anyone who asks:
+
+```caddyfile
+talaia.example.org {
+    @internal path /metrics /healthz /readyz
+    respond @internal 403
+
+    reverse_proxy <talaia-host>:9999
+}
+```
+
+With HTTPS terminating at the proxy, leave `TALAIA_SESSION_COOKIE_SECURE=true` and set
+`TALAIA_BASE_URL` to the public URL — that is what notification links point at.
+
+### Upgrading
+
+```sh
+cd /opt/talaia
+git fetch && git reset --hard origin/main
+docker compose -f compose.prod.yaml pull
+docker compose -f compose.prod.yaml up -d
+```
+
+`git reset --hard`, never `git pull`: a hard reset is what guarantees the server matches the
+repository. Never edit files on the server by hand — the next deploy discards them.
+
+To pin a release instead of tracking `main`, set `TALAIA_TAG=v1.0.0` in `.env`. Every commit
+also produces a `:$CI_COMMIT_SHORT_SHA` image, which is what you roll back to.
+
 ## Prometheus and Grafana
 
 Talaia exposes `/metrics` and expects to sit alongside Prometheus rather than replace it.

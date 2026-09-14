@@ -167,7 +167,7 @@ class TestLatencyChart:
 
         tallest = min(chart.points, key=lambda point: point.y)
         assert chart.max_latency == 100
-        assert tallest.y == pytest.approx(view.CHART_PADDING)
+        assert tallest.y == pytest.approx(chart.plot_top)
 
     def test_a_single_result_does_not_divide_by_a_zero_span(self) -> None:
         chart = view.latency_chart([result(minutes_ago=0)])
@@ -186,13 +186,14 @@ class TestLatencyChart:
         assert len(chart.failures) == 1
         assert chart.sample_count == 2
 
-    def test_every_point_stays_inside_the_viewbox(self) -> None:
+    def test_every_point_stays_inside_the_plot_area(self) -> None:
+        """Not merely inside the viewBox: a point over the gutters would sit on a label."""
         results = [result(minutes_ago=index, latency_ms=index * 7 + 1) for index in range(20)]
 
         chart = view.latency_chart(results)
 
-        assert all(0 <= point.x <= chart.width for point in chart.points)
-        assert all(0 <= point.y <= chart.height for point in chart.points)
+        assert all(chart.plot_left <= point.x <= chart.plot_right for point in chart.points)
+        assert all(chart.plot_top <= point.y <= chart.plot_bottom for point in chart.points)
 
     def test_only_failures_still_draws_something(self) -> None:
         chart = view.latency_chart(
@@ -232,3 +233,45 @@ class TestIncidentRows:
         assert rows[0].ongoing is True
         assert rows[0].duration == "5m"
         assert rows[0].resolved_at == "—"
+
+
+class TestChartAxes:
+    def test_the_latency_axis_runs_from_zero_to_the_peak(self) -> None:
+        results = [result(minutes_ago=10, latency_ms=10), result(minutes_ago=0, latency_ms=80)]
+
+        chart = view.latency_chart(results)
+
+        assert [tick.label for tick in chart.latency_ticks] == ["0", "40", "80"]
+
+    def test_the_zero_tick_sits_on_the_baseline(self) -> None:
+        chart = view.latency_chart([result(minutes_ago=0, latency_ms=50)])
+
+        zero = next(tick for tick in chart.latency_ticks if tick.label == "0")
+        assert zero.position == pytest.approx(chart.plot_bottom)
+
+    def test_the_time_axis_is_labelled_as_a_clock(self) -> None:
+        results = [result(minutes_ago=60), result(minutes_ago=30), result(minutes_ago=0)]
+
+        chart = view.latency_chart(results)
+
+        assert [tick.label for tick in chart.time_ticks] == ["11:00", "11:30", "12:00"]
+
+    def test_time_ticks_span_the_plot_area(self) -> None:
+        results = [result(minutes_ago=60), result(minutes_ago=0)]
+
+        chart = view.latency_chart(results)
+
+        assert chart.time_ticks[0].position == pytest.approx(chart.plot_left)
+        assert chart.time_ticks[-1].position == pytest.approx(chart.plot_right)
+
+    def test_a_single_reading_does_not_repeat_its_tick(self) -> None:
+        """Three identical labels stacked on one pixel read as a rendering bug."""
+        chart = view.latency_chart([result(minutes_ago=0)])
+
+        assert len(chart.time_ticks) == 1
+
+    def test_an_empty_chart_has_no_ticks(self) -> None:
+        chart = view.latency_chart([])
+
+        assert chart.latency_ticks == ()
+        assert chart.time_ticks == ()

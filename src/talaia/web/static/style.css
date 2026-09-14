@@ -1,19 +1,73 @@
-/* One hand-written stylesheet. Dark theme, system fonts, no framework. */
+/* One hand-written stylesheet. System fonts, no framework, no build step. */
+
+/* Three theme states: an explicit choice wins, otherwise follow the operating system.
+   The dark tokens appear twice on purpose -- once for "system is dark and the reader has
+   not chosen", once for "the reader chose dark" -- because a single rule cannot express
+   both without losing to the other. */
 
 :root {
-  --bg: #0f1216;
-  --bg-raised: #161b22;
-  --bg-sunken: #0b0e12;
-  --border: #262d36;
-  --text: #d7dee7;
-  --text-muted: #8b97a6;
-  --accent: #58a6ff;
-  --up: #3fb950;
-  --down: #f85149;
-  --unknown: #8b949e;
-  --paused: #d29922;
+  --bg: #f4f1ec;
+  --bg-raised: #ffffff;
+  --bg-sunken: #eae5dd;
+  --border: #d9d2c7;
+  --text: #1b1815;
+  --text-muted: #5f584e;
+
+  /* Identity only. Never used to indicate a status -- that is what the four below are
+     for, and an orange that sometimes means "brand" and sometimes means "warning" is
+     unreadable at a glance. Darker than the dark-theme accent so link text clears
+     4.5:1 on a light ground. */
+  --accent: #b04a18;
+  --accent-ink: #ffffff;
+
+  --up: #4a6b2a;
+  --down: #b23423;
+  --paused: #8a6410;
+  --unknown: #6f675c;
+  --no-data: #d9d2c7;
+
   --radius: 6px;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12100e;
+    --bg-raised: #1b1815;
+    --bg-sunken: #0b0908;
+    --border: #3a342c;
+    --text: #e6e0d6;
+    --text-muted: #b5ada1;
+    --accent: #e8743c;
+    --accent-ink: #12100e;
+    --up: #7fa855;
+    --down: #d9503d;
+    --paused: #d79a2b;
+    --unknown: #6f675c;
+    --no-data: #3a342c;
+
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #12100e;
+  --bg-raised: #1b1815;
+  --bg-sunken: #0b0908;
+  --border: #3a342c;
+  --text: #e6e0d6;
+  --text-muted: #b5ada1;
+  --accent: #e8743c;
+  --accent-ink: #12100e;
+  --up: #7fa855;
+  --down: #d9503d;
+  --paused: #d79a2b;
+  --unknown: #6f675c;
+  --no-data: #3a342c;
+
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -44,9 +98,14 @@ code { font-family: var(--mono); font-size: 0.9em; }
   border-bottom: 1px solid var(--border);
   background: var(--bg-raised);
 }
-.brand { display: flex; align-items: center; gap: 8px; color: var(--text); font-weight: 600; }
+.brand { display: flex; align-items: center; gap: 9px; color: var(--text); }
+.brand-name {
+  font-family: var(--mono); font-size: 1.15em; font-weight: 600;
+  letter-spacing: -0.05em; text-transform: lowercase;
+}
 .brand:hover { text-decoration: none; }
-.brand-mark { color: var(--accent); font-size: 1.2em; }
+.brand-mark { display: block; width: 22px; height: 22px; color: var(--text); }
+.brand-mark svg { display: block; width: 100%; height: 100%; }
 .masthead-links { display: flex; gap: 16px; font-size: 0.9em; }
 
 .page { max-width: 1100px; margin: 0 auto; padding: 24px; }
@@ -96,11 +155,18 @@ code { font-family: var(--mono); font-size: 0.9em; }
 .cell-target code { color: var(--text-muted); }
 .cell-strip { width: 190px; }
 
-.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--unknown); }
+/* Shape carries the status as well as colour. Roughly one man in twelve cannot separate
+   the green from the red, and a printed or screenshotted dashboard has no colour at all. */
+.dot {
+  display: inline-block; width: 10px; height: 10px;
+  border-radius: 50%; background: var(--unknown);
+}
 .dot-up { background: var(--up); }
-.dot-down { background: var(--down); }
-.dot-paused { background: var(--paused); }
-.dot-unknown { background: var(--unknown); }
+.dot-down { background: var(--down); border-radius: 2px; }              /* square */
+.dot-paused {
+  background: var(--paused); border-radius: 1px; transform: rotate(45deg);  /* diamond */
+}
+.dot-unknown { background: transparent; border: 2px solid var(--unknown); }  /* hollow */
 
 .badge {
   display: inline-block; margin-left: 6px; padding: 1px 6px;
@@ -122,7 +188,7 @@ code { font-family: var(--mono); font-size: 0.9em; }
 .segment { width: 3px; height: 18px; border-radius: 1px; background: var(--border); }
 .segment-ok { background: var(--up); }
 .segment-fail { background: var(--down); }
-.segment-empty { background: var(--border); opacity: 0.4; }
+.segment-empty { background: var(--no-data); }
 
 /* Detail page ------------------------------------------------------------- */
 
@@ -158,10 +224,21 @@ code { font-family: var(--mono); font-size: 0.9em; }
 /* Chart ------------------------------------------------------------------- */
 
 .chart {
-  width: 100%; height: 180px;
+  width: 100%; height: 200px;
   background: var(--bg-sunken); border-radius: var(--radius);
 }
 .chart-axis { stroke: var(--border); stroke-width: 1; }
+.chart-grid line { stroke: var(--border); stroke-width: 1; stroke-dasharray: 2 4; opacity: 0.7; }
+.chart-tick {
+  fill: var(--text-muted); font-family: var(--mono); font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.chart-tick-y { text-anchor: end; dominant-baseline: middle; }
+.chart-tick-x { text-anchor: middle; }
+.chart-axis-label {
+  fill: var(--text-muted); font-family: var(--mono); font-size: 9px;
+  letter-spacing: 0.06em; text-anchor: end;
+}
 .chart-line { fill: none; stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .chart-point { fill: var(--accent); }
 .chart-failure { stroke: var(--down); stroke-width: 1; opacity: 0.55; }
@@ -202,7 +279,7 @@ code { font-family: var(--mono); font-size: 0.9em; }
 .login-form input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .login-form button {
   padding: 9px 12px; margin-top: 4px;
-  background: var(--accent); color: #06121f;
+  background: var(--accent); color: var(--accent-ink);
   border: none; border-radius: var(--radius);
   font: inherit; font-weight: 600; cursor: pointer;
 }
@@ -210,8 +287,89 @@ code { font-family: var(--mono); font-size: 0.9em; }
 
 .logout-form { display: flex; align-items: center; gap: 10px; margin: 0; }
 .masthead-user { color: var(--text-muted); }
-.linklike {
-  padding: 0; background: none; border: none;
-  color: var(--accent); font: inherit; cursor: pointer;
+
+.masthead-links button {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px;
+  background: transparent; color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  font: inherit; font-size: 0.9em; line-height: 1; cursor: pointer;
 }
-.linklike:hover { text-decoration: underline; }
+.masthead-links button:hover { color: var(--text); border-color: var(--text-muted); }
+.masthead-links button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* The button shows the theme it would switch TO, so the icon is the destination, not
+   the current state. Four cases: chosen light, chosen dark, and system-follows-either. */
+.theme-toggle svg { width: 15px; height: 15px; }
+.icon-sun, .icon-moon { display: none; }
+
+:root[data-theme="light"] .icon-moon { display: block; }
+:root[data-theme="dark"] .icon-sun { display: block; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .icon-sun { display: block; }
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .icon-moon { display: block; }
+}
+
+/* Filters ----------------------------------------------------------------- */
+
+.filters { display: flex; flex-wrap: wrap; gap: 6px; margin: -8px 0 20px; }
+.filter {
+  padding: 4px 10px;
+  background: transparent; color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: 999px;
+  font: inherit; font-size: 0.82em; line-height: 1.4; cursor: pointer;
+}
+.filter:hover { color: var(--text); border-color: var(--text-muted); }
+.filter[aria-pressed="true"] {
+  background: var(--bg-raised); color: var(--text); border-color: var(--text-muted);
+}
+.filter:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Filtering is done in CSS rather than JavaScript so that a row swapped in by HTMX
+   obeys the current filter immediately, with nothing to re-apply. */
+body[data-filter="down"] .monitor-row:not([data-status="down"]),
+body[data-filter="up"] .monitor-row:not([data-status="up"]),
+body[data-filter="unknown"] .monitor-row:not([data-status="unknown"]),
+body[data-filter="paused"] .monitor-row:not([data-status="paused"]) { display: none; }
+
+body[data-filter="down"] .group:not(:has(.monitor-row[data-status="down"])),
+body[data-filter="up"] .group:not(:has(.monitor-row[data-status="up"])),
+body[data-filter="unknown"] .group:not(:has(.monitor-row[data-status="unknown"])),
+body[data-filter="paused"] .group:not(:has(.monitor-row[data-status="paused"])) { display: none; }
+
+.filtered-empty { display: none; }
+body[data-filter="down"]:not(:has(.monitor-row[data-status="down"])) .filtered-empty,
+body[data-filter="up"]:not(:has(.monitor-row[data-status="up"])) .filtered-empty,
+body[data-filter="unknown"]:not(:has(.monitor-row[data-status="unknown"])) .filtered-empty,
+body[data-filter="paused"]:not(:has(.monitor-row[data-status="paused"])) .filtered-empty {
+  display: block;
+}
+
+.group-summary {
+  margin-left: 8px; color: var(--text-muted);
+  font-family: var(--mono); font-size: 0.92em; letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Freshness --------------------------------------------------------------- */
+
+.freshness { color: var(--text-muted); font-size: 0.8em; font-variant-numeric: tabular-nums; }
+.freshness.stale { color: var(--paused); }
+
+/* Window picker ----------------------------------------------------------- */
+
+.windows { display: flex; gap: 6px; margin-bottom: 12px; }
+.windows a {
+  padding: 3px 9px;
+  color: var(--text-muted); border: 1px solid var(--border); border-radius: 999px;
+  font-size: 0.82em;
+}
+.windows a:hover { color: var(--text); border-color: var(--text-muted); text-decoration: none; }
+.windows a[aria-current="page"] {
+  background: var(--bg-sunken); color: var(--text); border-color: var(--text-muted);
+}
+
+.strip-span { display: block; margin-top: 8px; }

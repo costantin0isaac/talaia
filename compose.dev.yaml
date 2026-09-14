@@ -17,6 +17,10 @@ services:
       - "9999:9999"
     volumes:
       - ./config:/app/config:ro
+      # Templates and static assets, served straight from disk: edit and refresh, no
+      # rebuild. Jinja reloads changed templates per request and StaticFiles re-reads the
+      # file each time. Python changes still need a restart.
+      - ./src/talaia/web:/app/src/talaia/web:ro
     depends_on:
       db:
         condition: service_healthy

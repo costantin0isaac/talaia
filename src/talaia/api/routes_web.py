@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -24,6 +24,10 @@ UPTIME_WINDOW_HOURS = 24
 DETAIL_INCIDENTS = 20
 CHART_HOURS = 24
 POLL_SECONDS = 15
+
+# Offered on the detail page. The API already accepts 1-720; these are the useful ones.
+CHART_WINDOWS = (1, 24, 168)
+INCIDENT_PAGE_LIMIT = 100
 
 
 def wants_html(request: Request) -> bool:
@@ -105,9 +109,38 @@ async def monitor_row_partial(name: str, request: Request, session: SessionDep) 
     )
 
 
+@router.get("/incidents", response_class=HTMLResponse)
+async def incidents_page(
+    request: Request,
+    session: SessionDep,
+    user: AuthenticatedUser,
+    only_open: Annotated[bool, Query(alias="open")] = False,
+) -> HTMLResponse:
+    """Render incident history across every monitor."""
+    rows = await repo.list_incidents_with_monitor(
+        session, open_only=only_open, limit=INCIDENT_PAGE_LIMIT
+    )
+    now = datetime.now(UTC)
+    incidents = [
+        (name, row)
+        for (incident, name), row in zip(
+            rows, view.incident_rows([incident for incident, _ in rows], now=now), strict=True
+        )
+    ]
+    return templates.TemplateResponse(
+        request,
+        "incidents.html",
+        {"incidents": incidents, "only_open": only_open, "user": user},
+    )
+
+
 @router.get("/monitors/{name}", response_class=HTMLResponse)
 async def monitor_detail(
-    name: str, request: Request, session: SessionDep, user: AuthenticatedUser
+    name: str,
+    request: Request,
+    session: SessionDep,
+    user: AuthenticatedUser,
+    hours: Annotated[int, Query(ge=1, le=720)] = CHART_HOURS,
 ) -> HTMLResponse:
     """Render one monitor's configuration, uptime, latency chart and incidents."""
     monitor = await _require_monitor(session, name)
@@ -117,7 +150,7 @@ async def monitor_detail(
 
     strip = await repo.list_latest_results_by_monitor(session, [monitor.id])
     chart_results = await repo.list_check_results(
-        session, monitor.id, since=now - timedelta(hours=CHART_HOURS)
+        session, monitor.id, since=now - timedelta(hours=hours)
     )
     incidents = await repo.list_incidents(session, monitor_id=monitor.id, limit=DETAIL_INCIDENTS)
 
@@ -149,7 +182,12 @@ async def monitor_detail(
     return templates.TemplateResponse(
         request,
         "monitor_detail.html",
-        {"detail": detail, "chart_hours": CHART_HOURS, "user": user},
+        {
+            "detail": detail,
+            "chart_hours": hours,
+            "chart_windows": CHART_WINDOWS,
+            "user": user,
+        },
     )
 
 
@@ -182,6 +220,7 @@ async def _dashboard_state(session: AsyncSession) -> tuple[tuple[view.Group, ...
         paused=counts.get(MonitorStatus.PAUSED, 0),
         open_incidents=await repo.count_open_incidents(session),
         uptime_24h=format_percentage(await repo.overall_uptime_ratio(session, since=since)),
+        updated_at=datetime.now(UTC),
     )
     return groups, summary
 

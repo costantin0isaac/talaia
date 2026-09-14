@@ -34,4 +34,10 @@
     <span class="stat-value">{{ summary.open_incidents }}</span>
     <span class="stat-label">open incidents</span>
   </div>
+  <div class="stat">
+    <span class="stat-value freshness" data-updated="{{ summary.updated_at.timestamp() | int }}">
+      just now
+    </span>
+    <span class="stat-label">last update</span>
+  </div>
 </section>

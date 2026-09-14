@@ -1,5 +1,6 @@
 <tr id="monitor-{{ row.name }}"
     class="monitor-row"
+    data-status="{{ row.status }}"
     hx-get="/partials/monitors/{{ row.name }}/row"
     hx-trigger="every {{ poll_seconds }}s"
     hx-swap="outerHTML">
@@ -17,5 +18,7 @@
     {% if row.certificate %}<span class="cert-hint">{{ row.certificate }}</span>{% endif %}
   </td>
   <td class="cell-uptime">{{ row.uptime_24h }}</td>
-  <td class="cell-strip">{% include "partials/strip.html" %}</td>
+  <td class="cell-strip" title="{{ row.strip_span or 'no checks recorded' }}">
+    {% include "partials/strip.html" %}
+  </td>
 </tr>

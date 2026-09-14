@@ -73,7 +73,9 @@ unit:
     reports:
       junit: report.xml
 
-image:
+# Not named 'image': that is a reserved top-level keyword for the default job image,
+# and GitLab rejects the whole pipeline if a job shadows it.
+build-image:
   stage: build
   image: docker:28-cli
   services:

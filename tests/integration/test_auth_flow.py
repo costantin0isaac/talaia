@@ -13,6 +13,7 @@ from tests.integration.conftest import COOKIE_NAME, TEST_PASSWORD, TEST_PASSWORD
 from talaia.api.app import create_app
 from talaia.api.dependencies import get_session
 from talaia.auth.passwords import hash_password
+from talaia.auth.throttle import LoginThrottle
 from talaia.auth.tokens import hash_token, new_token
 from talaia.db import repository as repo
 from talaia.settings import Settings
@@ -360,3 +361,90 @@ class TestExpiredSessionPruning:
 
         assert removed == 1
         assert await repo.get_session_user(session, hash_token(live), now=datetime.now(UTC))
+
+
+class TestLoginRateLimit:
+    async def test_attempts_are_refused_once_the_budget_is_spent(
+        self, app: FastAPI, anonymous: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        await make_user(session)
+        app.state.login_throttle = LoginThrottle(
+            max_attempts=3, lockout_seconds=60, max_lockout_seconds=900
+        )
+
+        for _ in range(3):
+            attempt = await anonymous.post(
+                "/login", data={"username": "isaac", "password": "wrong"}
+            )
+            assert attempt.status_code == 401
+
+        refused = await anonymous.post("/login", data={"username": "isaac", "password": "wrong"})
+
+        assert refused.status_code == 429
+        assert "Too many attempts" in refused.text
+        assert int(refused.headers["Retry-After"]) > 0
+
+    async def test_the_right_password_is_refused_too_while_locked_out(
+        self, app: FastAPI, anonymous: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        """Otherwise the limit would be trivially bypassed by guessing correctly."""
+        await make_user(session)
+        app.state.login_throttle = LoginThrottle(
+            max_attempts=1, lockout_seconds=60, max_lockout_seconds=900
+        )
+        await anonymous.post("/login", data={"username": "isaac", "password": "wrong"})
+
+        response = await anonymous.post(
+            "/login", data={"username": "isaac", "password": TEST_PASSWORD}
+        )
+
+        assert response.status_code == 429
+        assert COOKIE_NAME not in response.cookies
+
+    async def test_a_success_clears_the_count(
+        self, app: FastAPI, anonymous: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        await make_user(session)
+        app.state.login_throttle = LoginThrottle(
+            max_attempts=3, lockout_seconds=60, max_lockout_seconds=900
+        )
+        for _ in range(2):
+            await anonymous.post("/login", data={"username": "isaac", "password": "wrong"})
+
+        good = await anonymous.post("/login", data={"username": "isaac", "password": TEST_PASSWORD})
+        assert good.status_code == 303
+
+        for _ in range(2):
+            again = await anonymous.post("/login", data={"username": "isaac", "password": "wrong"})
+            assert again.status_code == 401
+
+    async def test_an_unknown_username_still_counts(
+        self, app: FastAPI, anonymous: httpx.AsyncClient
+    ) -> None:
+        """Otherwise the budget is bypassed by varying the username."""
+        app.state.login_throttle = LoginThrottle(
+            max_attempts=2, lockout_seconds=60, max_lockout_seconds=900
+        )
+
+        for name in ("alice", "bob"):
+            await anonymous.post("/login", data={"username": name, "password": "wrong"})
+
+        refused = await anonymous.post("/login", data={"username": "carol", "password": "wrong"})
+
+        assert refused.status_code == 429
+
+    async def test_the_default_budget_leaves_room_for_typos(
+        self, anonymous: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        """Five is generous for a human and still stops a guessing run."""
+        await make_user(session)
+
+        for _ in range(4):
+            attempt = await anonymous.post(
+                "/login", data={"username": "isaac", "password": "wrong"}
+            )
+            assert attempt.status_code == 401
+
+        good = await anonymous.post("/login", data={"username": "isaac", "password": TEST_PASSWORD})
+
+        assert good.status_code == 303

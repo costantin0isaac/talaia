@@ -51,6 +51,22 @@ class Settings(BaseSettings):
             "https means secure. Set explicitly only to override that."
         ),
     )
+    login_max_attempts: int = Field(
+        default=5,
+        ge=1,
+        description="Failed logins allowed from one address before attempts are refused.",
+    )
+    login_lockout_seconds: int = Field(
+        default=60,
+        ge=1,
+        description="How long the first lockout lasts; it doubles with each further failure.",
+    )
+    login_max_lockout_seconds: int = Field(
+        default=900,
+        ge=1,
+        description="Ceiling on the doubling lockout.",
+    )
+
     proxy_ips: str | None = Field(
         default=None,
         description=(

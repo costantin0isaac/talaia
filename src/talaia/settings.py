@@ -51,6 +51,14 @@ class Settings(BaseSettings):
             "https means secure. Set explicitly only to override that."
         ),
     )
+    metrics_token: str | None = Field(
+        default=None,
+        description=(
+            "Bearer token required to scrape /metrics. Unset, the endpoint is open, which "
+            "is safe only while something else keeps it off the public internet."
+        ),
+    )
+
     login_max_attempts: int = Field(
         default=5,
         ge=1,

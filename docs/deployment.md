@@ -121,6 +121,30 @@ rule_files:
   - talaia-rules.yml
 ```
 
+### Locking down `/metrics`
+
+The endpoint is unauthenticated by default, and it names every monitor, group and type you
+have. Blocking it at the reverse proxy is enough — until the day someone adds a second
+proxy, or mistypes the rule. Setting a token makes the endpoint safe on its own:
+
+```sh
+TALAIA_METRICS_TOKEN=$(openssl rand -hex 32)
+```
+
+Prometheus then needs it too:
+
+```yaml
+scrape_configs:
+  - job_name: talaia
+    authorization:
+      credentials: "<the same token>"
+    static_configs:
+      - targets: ["talaia-host:9999"]
+```
+
+Leave it unset and nothing changes. `/healthz` and `/readyz` stay open either way — an
+orchestrator cannot carry a secret and they reveal nothing.
+
 | Metric | Type | Labels |
 |---|---|---|
 | `talaia_check_up` | gauge | `monitor`, `type`, `group` |

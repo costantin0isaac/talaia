@@ -1,5 +1,6 @@
 """JSON endpoints."""
 
+import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
@@ -207,9 +208,37 @@ async def readyz(request: Request, session: SessionDep, response: Response) -> R
     return Readiness(status="ready" if ready else "not ready", database=database, scheduler=running)
 
 
+def metrics_authorised(request: Request) -> bool:
+    """Whether this caller may scrape /metrics.
+
+    Open when no token is configured, because Prometheus on the LAN is the normal case and
+    a mandatory secret would be one more thing to get wrong. When a token is set the
+    comparison is constant-time: the endpoint is reachable by anything that can route to
+    it, so a timing oracle here would be worth having.
+    """
+    settings: Settings = request.app.state.settings
+    expected = settings.metrics_token
+    if not expected:
+        return True
+
+    header = request.headers.get("Authorization", "")
+    scheme, _, presented = header.partition(" ")
+    if scheme.lower() != "bearer":
+        return False
+    return secrets.compare_digest(presented, expected)
+
+
 @public_router.get("/metrics", include_in_schema=False)
 async def metrics(request: Request, session: SessionDep) -> Response:
     """Expose Prometheus metrics, read from the database at scrape time."""
+    if not metrics_authorised(request):
+        return Response(
+            content="unauthorised\n",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            headers={"WWW-Authenticate": "Bearer"},
+            media_type="text/plain",
+        )
+
     collectors: Metrics = request.app.state.metrics
     samples = [
         MonitorSample(

@@ -10,7 +10,7 @@ from fastapi.exception_handlers import http_exception_handler
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from talaia import __version__
-from talaia.api.dependencies import require_user
+from talaia.api.dependencies import require_api_access, require_user
 from talaia.api.routes_api import public_router, router
 from talaia.api.routes_auth import router as auth_router
 from talaia.api.routes_web import not_found, unauthenticated, wants_html
@@ -154,9 +154,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(public_router)
     app.include_router(auth_router)
 
-    guarded = [Depends(require_user)]
-    app.include_router(router, dependencies=guarded)
-    app.include_router(web_router, dependencies=guarded)
+    # The JSON API also accepts a machine token; the pages are for people only.
+    app.include_router(router, dependencies=[Depends(require_api_access)])
+    app.include_router(web_router, dependencies=[Depends(require_user)])
 
     @app.exception_handler(StarletteHTTPException)
     async def handle_http_exception(request: Request, exc: StarletteHTTPException) -> Response:

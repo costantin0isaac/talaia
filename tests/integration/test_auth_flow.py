@@ -448,3 +448,82 @@ class TestLoginRateLimit:
         good = await anonymous.post("/login", data={"username": "isaac", "password": TEST_PASSWORD})
 
         assert good.status_code == 303
+
+
+class TestApiToken:
+    @staticmethod
+    def with_token(app: FastAPI, token: str | None) -> None:
+        app.state.settings = Settings(  # type: ignore[call-arg]
+            _env_file=None,
+            database_url=app.state.settings.database_url,
+            api_token=token,
+            session_cookie_secure=False,
+        )
+
+    async def test_the_api_is_closed_when_no_token_is_set(
+        self, anonymous: httpx.AsyncClient
+    ) -> None:
+        """An unset setting must not become an accidental way in."""
+        response = await anonymous.get(
+            "/api/monitors", headers={"Authorization": "Bearer anything"}
+        )
+
+        assert response.status_code == 401
+
+    async def test_a_token_opens_the_api(self, app: FastAPI, anonymous: httpx.AsyncClient) -> None:
+        self.with_token(app, "ci-token")
+
+        response = await anonymous.get(
+            "/api/monitors", headers={"Authorization": "Bearer ci-token"}
+        )
+
+        assert response.status_code == 200
+
+    async def test_reload_is_reachable_with_a_token(
+        self, app: FastAPI, anonymous: httpx.AsyncClient
+    ) -> None:
+        """The point of the whole thing: CI can apply a config change."""
+        self.with_token(app, "ci-token")
+
+        class FakeScheduler:
+            running_monitors: frozenset[str] = frozenset()
+
+            async def sync(self) -> None:
+                return None
+
+        app.state.scheduler = FakeScheduler()
+
+        response = await anonymous.post("/api/reload", headers={"Authorization": "Bearer ci-token"})
+
+        assert response.status_code == 200
+
+    @pytest.mark.parametrize("header", ["Bearer wrong", "Basic ci-token", "ci-token"])
+    async def test_a_wrong_token_is_refused(
+        self, app: FastAPI, anonymous: httpx.AsyncClient, header: str
+    ) -> None:
+        self.with_token(app, "ci-token")
+
+        response = await anonymous.get("/api/monitors", headers={"Authorization": header})
+
+        assert response.status_code == 401
+
+    async def test_the_token_does_not_open_the_pages(
+        self, app: FastAPI, anonymous: httpx.AsyncClient
+    ) -> None:
+        """A token is for callers that read JSON; a page has nothing to say to one."""
+        self.with_token(app, "ci-token")
+
+        response = await anonymous.get("/", headers={"Authorization": "Bearer ci-token"})
+
+        assert response.status_code == 303
+        assert "/login" in response.headers["location"]
+
+    async def test_a_session_still_works_when_a_token_is_configured(
+        self, app: FastAPI, anonymous: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        self.with_token(app, "ci-token")
+        token = await login(session, username="person")
+
+        response = await carrying(anonymous, token).get("/api/monitors")
+
+        assert response.status_code == 200

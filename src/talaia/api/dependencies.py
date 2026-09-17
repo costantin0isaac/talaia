@@ -1,5 +1,6 @@
 """FastAPI dependencies."""
 
+import secrets
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
@@ -51,6 +52,34 @@ async def current_user(request: Request, session: SessionDep) -> User | None:
 
 
 CurrentUser = Annotated[User | None, Depends(current_user)]
+
+
+def api_token_valid(request: Request) -> bool:
+    """Whether the request carries the configured machine token.
+
+    Constant-time, and false whenever no token is configured: an unset setting must not
+    become an accidental way in.
+    """
+    settings: Settings = request.app.state.settings
+    expected = settings.api_token
+    if not expected:
+        return False
+
+    scheme, _, presented = request.headers.get("Authorization", "").partition(" ")
+    if scheme.lower() != "bearer":
+        return False
+    return secrets.compare_digest(presented, expected)
+
+
+async def require_api_access(request: Request, user: CurrentUser) -> None:
+    """Allow a signed-in person or a script holding the API token.
+
+    Deliberately not extended to the web routes: a token is for callers that read JSON,
+    and pages have nothing useful to say to one.
+    """
+    if user is not None or api_token_valid(request):
+        return
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="authentication required")
 
 
 async def require_user(user: CurrentUser) -> User:

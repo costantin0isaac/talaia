@@ -774,3 +774,68 @@ class TestReadyz:
         response = await client.get("/openapi.json")
 
         assert "/readyz" in response.json()["paths"]
+
+
+class TestMetricsToken:
+    @staticmethod
+    def with_token(app: FastAPI, token: str | None) -> None:
+        app.state.settings = Settings(  # type: ignore[call-arg]
+            _env_file=None,
+            database_url=app.state.settings.database_url,
+            metrics_token=token,
+        )
+
+    async def test_open_when_no_token_is_configured(self, client: httpx.AsyncClient) -> None:
+        """Prometheus on a LAN is the normal case; a mandatory secret is a trap."""
+        response = await client.get("/metrics")
+
+        assert response.status_code == 200
+
+    async def test_a_token_is_required_once_configured(
+        self, app: FastAPI, anonymous: httpx.AsyncClient
+    ) -> None:
+        self.with_token(app, "s3cret")
+
+        response = await anonymous.get("/metrics")
+
+        assert response.status_code == 401
+        assert response.headers["WWW-Authenticate"] == "Bearer"
+
+    async def test_the_right_token_is_accepted(
+        self, app: FastAPI, anonymous: httpx.AsyncClient
+    ) -> None:
+        self.with_token(app, "s3cret")
+
+        response = await anonymous.get("/metrics", headers={"Authorization": "Bearer s3cret"})
+
+        assert response.status_code == 200
+        assert "talaia_build_info" in response.text
+
+    @pytest.mark.parametrize(
+        "header",
+        ["Bearer wrong", "Basic s3cret", "s3cret", "Bearer", "Bearer  s3cret"],
+    )
+    async def test_anything_else_is_refused(
+        self, app: FastAPI, anonymous: httpx.AsyncClient, header: str
+    ) -> None:
+        self.with_token(app, "s3cret")
+
+        response = await anonymous.get("/metrics", headers={"Authorization": header})
+
+        assert response.status_code == 401
+
+    async def test_the_scheme_is_case_insensitive(
+        self, app: FastAPI, anonymous: httpx.AsyncClient
+    ) -> None:
+        self.with_token(app, "s3cret")
+
+        response = await anonymous.get("/metrics", headers={"Authorization": "bearer s3cret"})
+
+        assert response.status_code == 200
+
+    async def test_the_probes_stay_open(self, app: FastAPI, anonymous: httpx.AsyncClient) -> None:
+        """An orchestrator cannot carry a secret, and they reveal nothing."""
+        self.with_token(app, "s3cret")
+
+        for path in ("/healthz", "/readyz"):
+            assert (await anonymous.get(path)).status_code in (200, 503)

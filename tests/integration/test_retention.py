@@ -77,13 +77,14 @@ class TestRollup:
         assert today.successful_checks == 2
         assert today.avg_latency_ms == 20
 
-    async def test_covers_yesterday_and_today_only(
+    async def test_backfills_every_day_that_has_results_but_no_rollup(
         self, committed_factory: async_sessionmaker[AsyncSession]
     ) -> None:
+        """After a five-day outage, one pass repairs all five days, not just yesterday."""
         async with committed_factory() as setup:
             monitor = await make_monitor(setup)
             monitor_id = monitor.id
-            for days_ago in (0, 1, 2):
+            for days_ago in range(6):
                 await repo.record_check_result(
                     setup,
                     monitor_id=monitor_id,
@@ -92,12 +93,100 @@ class TestRollup:
                 )
             await setup.commit()
 
-        await task(committed_factory).run_once()
+        report = await task(committed_factory).run_once()
 
         async with committed_factory() as check:
             days = [row.day for row in await rollups(check, monitor_id)]
 
-        assert days == [YESTERDAY, TODAY]
+        expected = [TODAY - timedelta(days=days_ago) for days_ago in range(5, -1, -1)]
+        assert days == expected
+        assert report.days_rolled_up == tuple(expected)
+
+    async def test_days_already_rolled_up_are_left_alone(
+        self, committed_factory: async_sessionmaker[AsyncSession]
+    ) -> None:
+        """Only yesterday and today are refreshed when nothing is missing."""
+        async with committed_factory() as setup:
+            monitor = await make_monitor(setup)
+            monitor_id = monitor.id
+            for days_ago in (0, 1, 3):
+                await repo.record_check_result(
+                    setup,
+                    monitor_id=monitor_id,
+                    checked_at=NOW - timedelta(days=days_ago),
+                    success=True,
+                )
+            await repo.upsert_daily_uptime(
+                setup,
+                monitor_id=monitor_id,
+                day=TODAY - timedelta(days=3),
+                total_checks=1,
+                successful_checks=1,
+                avg_latency_ms=None,
+            )
+            await setup.commit()
+
+        report = await task(committed_factory).run_once()
+
+        assert report.days_rolled_up == (YESTERDAY, TODAY)
+
+    async def test_a_day_is_missing_if_any_one_monitor_lacks_its_row(
+        self, committed_factory: async_sessionmaker[AsyncSession]
+    ) -> None:
+        """A partial rollup -- one monitor written, another not -- still counts as missing."""
+        three_days_ago = TODAY - timedelta(days=3)
+        async with committed_factory() as setup:
+            first = await make_monitor(setup, "first")
+            second = await make_monitor(setup, "second")
+            second_id = second.id
+            for monitor in (first, second):
+                await repo.record_check_result(
+                    setup,
+                    monitor_id=monitor.id,
+                    checked_at=NOW - timedelta(days=3),
+                    success=True,
+                )
+            await repo.upsert_daily_uptime(
+                setup,
+                monitor_id=first.id,
+                day=three_days_ago,
+                total_checks=1,
+                successful_checks=1,
+                avg_latency_ms=None,
+            )
+            await setup.commit()
+
+        await task(committed_factory).run_once()
+
+        async with committed_factory() as check:
+            days = [row.day for row in await rollups(check, second_id)]
+
+        assert three_days_ago in days
+
+    async def test_backfill_stops_at_the_retention_window(
+        self, committed_factory: async_sessionmaker[AsyncSession]
+    ) -> None:
+        """A day whose results are about to be pruned is not worth a rollup it never had."""
+        async with committed_factory() as setup:
+            monitor = await make_monitor(setup)
+            monitor_id = monitor.id
+            for days_ago in (0, 5):
+                await repo.record_check_result(
+                    setup,
+                    monitor_id=monitor_id,
+                    checked_at=NOW - timedelta(days=days_ago),
+                    success=True,
+                )
+            await setup.commit()
+
+        report = await task(committed_factory, retention_days=3).run_once()
+
+        async with committed_factory() as check:
+            days = [row.day for row in await rollups(check, monitor_id)]
+
+        assert TODAY - timedelta(days=5) not in days
+        assert TODAY - timedelta(days=5) not in report.days_rolled_up
+        assert report.results_deleted == 1
 
     async def test_refreshes_an_existing_row_rather_than_failing(
         self, committed_factory: async_sessionmaker[AsyncSession]

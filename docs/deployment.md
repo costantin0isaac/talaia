@@ -91,6 +91,33 @@ It needs two things on the GitLab side:
 The job is `when: manual` deliberately. The pipeline says the image is good; a person says
 now is a good time.
 
+### Reloading the configuration from CI
+
+The README describes a loop — edit `monitors.yaml`, commit, push, CI validates, deploy,
+Talaia reconciles — but the last step needed someone to restart the container or press a
+button. A token closes it:
+
+```sh
+TALAIA_API_TOKEN=$(openssl rand -hex 32)
+```
+
+With that set, `/api/*` accepts `Authorization: Bearer <token>` instead of a session cookie,
+so the pipeline that deploys your configuration can apply it:
+
+```sh
+curl -fsS -X POST -H "Authorization: Bearer $TALAIA_API_TOKEN" \
+  https://talaia.example.org/api/reload
+```
+
+An invalid file comes back `422` and the running configuration is untouched, so a bad
+commit fails the pipeline instead of the monitoring.
+
+The token opens the **JSON API only**, never the pages — a browser session is still the
+only way to reach the dashboard. Unset, the API is reachable only with a login, and a token
+presented against an unset setting is refused rather than accepted.
+
+It also makes `curl` bearable for one-off queries, which previously meant a cookie jar.
+
 ### Backups
 
 `incidents` and `daily_uptime` are the permanent record — everything else is either

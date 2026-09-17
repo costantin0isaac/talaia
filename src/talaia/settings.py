@@ -69,6 +69,14 @@ class Settings(BaseSettings):
         ),
     )
 
+    api_token: str | None = Field(
+        default=None,
+        description=(
+            "Bearer token accepted instead of a session cookie on /api routes, for callers "
+            "that are scripts rather than people. Unset, only a session works."
+        ),
+    )
+
     metrics_token: str | None = Field(
         default=None,
         description=(

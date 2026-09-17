@@ -34,3 +34,25 @@ you.
 - The repository is treated as public from the first commit. Secrets are scanned by
   `gitleaks` in the pipeline. A secret that reaches git history must be rotated, whatever
   is done to the history afterwards.
+
+
+## Dependency updates
+
+`renovate.json` configures [Renovate](https://docs.renovatebot.com/) to watch
+`pyproject.toml`, `uv.lock`, the Dockerfile, the compose files and `.gitlab-ci.yml`.
+
+The shape of it, and why:
+
+| | |
+|---|---|
+| Weekly, Monday before 6am | One batch to review, not a trickle all week |
+| Minor and patch grouped | One reviewer; separate PRs for each would be noise |
+| Majors need approval | These are the ones that need reading before merging |
+| Security releases any time | A CVE should not wait for Monday |
+| Python and `uv` need approval | Recorded decisions in TALAIA.md §20.1, not dependency bumps |
+| Nothing automerges | The pipeline is good, but a green pipeline is not a review |
+
+Renovate is not self-hosted here. Either run it as a scheduled GitLab pipeline using the
+`renovate/renovate` image with a project access token, or point the hosted app at the
+repository. Until then the file is inert and costs nothing — but the `uv.lock` in this
+repository will age, and nothing else is watching it.

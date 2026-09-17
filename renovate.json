@@ -1,0 +1,49 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":dependencyDashboard"],
+  "timezone": "Europe/Madrid",
+  "schedule": ["before 6am on monday"],
+  "prConcurrentLimit": 3,
+  "labels": ["dependencies"],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on the first day of the month"]
+  },
+  "vulnerabilityAlerts": {
+    "description": "A security release is worth interrupting the weekly schedule for.",
+    "labels": ["dependencies", "security"],
+    "schedule": ["at any time"],
+    "prPriority": 10
+  },
+  "packageRules": [
+    {
+      "description": "Patch and minor updates of runtime dependencies travel together; there is one reviewer and separate PRs for each would be noise.",
+      "matchManagers": ["pep621"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "python dependencies"
+    },
+    {
+      "description": "Majors get their own PR: they are the ones that need reading.",
+      "matchManagers": ["pep621"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Development tooling can move on its own; a broken linter fails CI and nothing else.",
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["dev"],
+      "groupName": "dev tooling",
+      "automerge": false
+    },
+    {
+      "description": "CI and runtime images are pinned deliberately, so surface them but never move them silently.",
+      "matchManagers": ["dockerfile", "docker-compose", "gitlabci"],
+      "groupName": "container images"
+    },
+    {
+      "description": "Python itself is a deliberate choice recorded in TALAIA.md, not a dependency bump.",
+      "matchPackageNames": ["python", "ghcr.io/astral-sh/uv"],
+      "dependencyDashboardApproval": true
+    }
+  ]
+}

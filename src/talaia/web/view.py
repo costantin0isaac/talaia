@@ -160,6 +160,8 @@ class MonitorDetailView:
     group: str | None
     uptime_7d: str
     uptime_30d: str
+    latency_7d: str
+    latency_30d: str
     chart: LatencyChart
     incidents: tuple[IncidentRow, ...]
 

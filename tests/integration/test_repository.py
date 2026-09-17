@@ -1,6 +1,6 @@
 """Tests for the repository layer against a real PostgreSQL instance."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy.exc import IntegrityError
@@ -335,3 +335,68 @@ class TestDeactivation:
         assert still_there is not None
         assert still_there.active is False
         assert len(await repo.list_check_results(session, removed.id, since=NOW)) == 1
+
+
+class TestAverageLatencySinceDay:
+    @staticmethod
+    async def rollup(
+        session: AsyncSession,
+        monitor_id: int,
+        *,
+        day: date,
+        checks: int,
+        latency: int | None,
+    ) -> None:
+        await repo.upsert_daily_uptime(
+            session,
+            monitor_id=monitor_id,
+            day=day,
+            total_checks=checks,
+            successful_checks=checks,
+            avg_latency_ms=latency,
+        )
+
+    async def test_no_rollups_is_none(self, session: AsyncSession) -> None:
+        monitor = await make_monitor(session, "web")
+
+        assert (
+            await repo.average_latency_since_day(session, monitor.id, since=date(2026, 1, 1))
+            is None
+        )
+
+    async def test_weights_by_the_number_of_checks(self, session: AsyncSession) -> None:
+        """A quiet day must not weigh the same as a busy one."""
+        monitor = await make_monitor(session, "web")
+        await self.rollup(session, monitor.id, day=date(2026, 3, 13), checks=90, latency=10)
+        await self.rollup(session, monitor.id, day=date(2026, 3, 14), checks=10, latency=110)
+
+        mean = await repo.average_latency_since_day(session, monitor.id, since=date(2026, 3, 13))
+
+        assert mean == 20  # (90*10 + 10*110) / 100, not the flat average of 60
+
+    async def test_days_with_no_latency_are_excluded(self, session: AsyncSession) -> None:
+        """A day where every check failed has no latency, which is not the same as zero."""
+        monitor = await make_monitor(session, "web")
+        await self.rollup(session, monitor.id, day=date(2026, 3, 13), checks=10, latency=50)
+        await self.rollup(session, monitor.id, day=date(2026, 3, 14), checks=10, latency=None)
+
+        mean = await repo.average_latency_since_day(session, monitor.id, since=date(2026, 3, 13))
+
+        assert mean == 50
+
+    async def test_earlier_days_are_outside_the_window(self, session: AsyncSession) -> None:
+        monitor = await make_monitor(session, "web")
+        await self.rollup(session, monitor.id, day=date(2026, 3, 1), checks=10, latency=999)
+        await self.rollup(session, monitor.id, day=date(2026, 3, 14), checks=10, latency=20)
+
+        mean = await repo.average_latency_since_day(session, monitor.id, since=date(2026, 3, 10))
+
+        assert mean == 20
+
+    async def test_another_monitor_is_not_counted(self, session: AsyncSession) -> None:
+        mine = await make_monitor(session, "mine")
+        theirs = await make_monitor(session, "theirs")
+        await self.rollup(session, mine.id, day=date(2026, 3, 14), checks=10, latency=20)
+        await self.rollup(session, theirs.id, day=date(2026, 3, 14), checks=10, latency=900)
+
+        assert await repo.average_latency_since_day(session, mine.id, since=date(2026, 3, 1)) == 20

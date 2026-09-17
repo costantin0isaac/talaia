@@ -130,7 +130,15 @@ docker compose exec app python -m talaia.auth add isaac
 docker compose exec app python -m talaia.auth list
 docker compose exec app python -m talaia.auth passwd isaac
 docker compose exec app python -m talaia.auth disable isaac
+docker compose exec app python -m talaia.auth sessions isaac
+docker compose exec app python -m talaia.auth revoke isaac 3f9a1c2b0d7e
+docker compose exec app python -m talaia.auth revoke isaac all
 ```
+
+`sessions` lists every login a user has open — when it started, when it was last used, when
+it expires — each with a short id. `revoke` ends one by that id, or all of them. That is the
+"log me out everywhere" for a lost phone; `passwd` and `disable` also end every session but
+take the account with them.
 
 Start the application with no users and it logs a warning at startup saying exactly that,
 then serves a login page nobody can get past. It does not create a default account, because

@@ -7,12 +7,16 @@ come into being:
     python -m talaia.auth list
     python -m talaia.auth passwd isaac
     python -m talaia.auth disable isaac
+    python -m talaia.auth sessions isaac
+    python -m talaia.auth revoke isaac 3f9a1c
+    python -m talaia.auth revoke isaac all
 """
 
 import asyncio
 import getpass
 import sys
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,7 +26,15 @@ from talaia.db.engine import create_engine, create_session_factory
 from talaia.formatting import format_timestamp
 from talaia.settings import get_settings
 
-USAGE = "usage: python -m talaia.auth {add|list|passwd|disable|enable} [username]"
+USAGE = (
+    "usage: python -m talaia.auth add|passwd|disable|enable <username>\n"
+    "       python -m talaia.auth list\n"
+    "       python -m talaia.auth sessions <username>\n"
+    "       python -m talaia.auth revoke <username> <session-id>|all"
+)
+
+# Enough of the 64-character hash to be unambiguous in practice and short enough to type.
+SESSION_ID_LENGTH = 12
 
 
 def prompt_password() -> str | None:
@@ -57,7 +69,7 @@ async def add(session: AsyncSession, username: str) -> int:
     return 0
 
 
-async def show(session: AsyncSession, _: str) -> int:
+async def show(session: AsyncSession) -> int:
     """List the users."""
     users = await repo.list_users(session)
     if not users:
@@ -118,16 +130,74 @@ async def enable(session: AsyncSession, username: str) -> int:
     return await set_active(session, username, active=True)
 
 
-COMMANDS: dict[str, tuple[Callable[[AsyncSession, str], Awaitable[int]], bool]] = {
-    "add": (add, True),
-    "list": (show, False),
-    "passwd": (passwd, True),
-    "disable": (disable, True),
-    "enable": (enable, True),
+async def sessions(session: AsyncSession, username: str) -> int:
+    """List a user's sessions, so a stray login can be found and revoked."""
+    user = await repo.get_user_by_name(session, username)
+    if user is None:
+        print(f"no user {username!r}", file=sys.stderr)
+        return 1
+
+    rows = await repo.list_sessions_for_user(session, user.id)
+    if not rows:
+        print(f"{username} has no sessions")
+        return 0
+
+    now = datetime.now(UTC)
+    print(f"{'id':<{SESSION_ID_LENGTH}} {'created':<23} {'last seen':<23} {'expires':<23} state")
+    for row in rows:
+        state = "expired" if row.expires_at <= now else "active"
+        last_seen = format_timestamp(row.last_seen_at) if row.last_seen_at else "never"
+        print(
+            f"{row.token_hash[:SESSION_ID_LENGTH]} {format_timestamp(row.created_at):<23} "
+            f"{last_seen:<23} {format_timestamp(row.expires_at):<23} {state}"
+        )
+    return 0
+
+
+async def revoke(session: AsyncSession, username: str, session_id: str) -> int:
+    """End one session by id prefix, or every session with ``all``."""
+    user = await repo.get_user_by_name(session, username)
+    if user is None:
+        print(f"no user {username!r}", file=sys.stderr)
+        return 1
+
+    if session_id == "all":
+        ended = await repo.delete_sessions_for_user(session, user.id)
+        await session.commit()
+        print(f"{ended} session(s) ended for {username}")
+        return 0
+
+    matches = await repo.find_sessions_by_prefix(session, user.id, session_id)
+    if not matches:
+        print(f"no session of {username!r} starts with {session_id!r}", file=sys.stderr)
+        return 1
+    if len(matches) > 1:
+        print(
+            f"{session_id!r} matches {len(matches)} sessions; give more characters", file=sys.stderr
+        )
+        return 1
+
+    await repo.delete_session(session, matches[0].token_hash)
+    await session.commit()
+    print(f"session {matches[0].token_hash[:SESSION_ID_LENGTH]} ended for {username}")
+    return 0
+
+
+Handler = Callable[..., Awaitable[int]]
+
+# Each command with the number of arguments it takes after its own name.
+COMMANDS: dict[str, tuple[Handler, int]] = {
+    "add": (add, 1),
+    "list": (show, 0),
+    "passwd": (passwd, 1),
+    "disable": (disable, 1),
+    "enable": (enable, 1),
+    "sessions": (sessions, 1),
+    "revoke": (revoke, 2),
 }
 
 
-async def run(command: str, username: str) -> int:
+async def run(command: str, *args: str) -> int:
     """Open a database session and run one command in it."""
     settings = get_settings()
     engine = create_engine(settings.database_url)
@@ -135,7 +205,7 @@ async def run(command: str, username: str) -> int:
     try:
         async with factory() as session:
             handler, _ = COMMANDS[command]
-            return await handler(session, username)
+            return await handler(session, *args)
     finally:
         await engine.dispose()
 
@@ -146,13 +216,13 @@ def main(argv: list[str]) -> int:
         print(USAGE, file=sys.stderr)
         return 2
 
-    command = argv[0]
-    _, needs_username = COMMANDS[command]
-    if needs_username and len(argv) < 2:
+    command, args = argv[0], argv[1:]
+    _, arity = COMMANDS[command]
+    if len(args) != arity:
         print(USAGE, file=sys.stderr)
         return 2
 
-    return asyncio.run(run(command, argv[1] if len(argv) > 1 else ""))
+    return asyncio.run(run(command, *args))
 
 
 if __name__ == "__main__":

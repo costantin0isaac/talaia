@@ -15,3 +15,13 @@ tests
 *.env
 compose.*.yaml
 .gitlab-ci.yml
+
+# The real monitor list holds private addresses and is git-ignored, but the Dockerfile
+# copies config/ wholesale, so a local build would bake it into the image regardless.
+config/monitors.local.yaml
+
+# Never part of the image; keeping them out of the build context just makes it smaller.
+design/
+docs/
+grafana/
+prometheus/

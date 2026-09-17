@@ -83,6 +83,12 @@ class TestCommittedConfigFiles:
 
         assert config.resolve()
 
+    def test_the_real_config_never_enters_an_image(self) -> None:
+        """The Dockerfile copies config/ wholesale, so only .dockerignore keeps it out."""
+        patterns = (REPO_ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
+
+        assert "config/monitors.local.yaml" in patterns
+
     def test_committed_files_contain_no_real_addresses(self) -> None:
         text = (REPO_ROOT / "config" / "monitors.yaml").read_text(encoding="utf-8")
 

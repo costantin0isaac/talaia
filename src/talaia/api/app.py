@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 import httpx
 from fastapi import Depends, FastAPI, Request, Response, status
@@ -26,7 +27,7 @@ from talaia.engine.scheduler import Scheduler
 from talaia.formatting import set_display_timezone
 from talaia.logging import configure_logging, get_logger
 from talaia.metrics.registry import Metrics
-from talaia.notify.base import Notifier, NullNotifier
+from talaia.notify.base import Notifier, NullNotifier, startup_notification
 from talaia.notify.ntfy import NtfyNotifier
 from talaia.settings import Settings, get_settings
 from talaia.web.static_files import CachedStaticFiles
@@ -52,6 +53,21 @@ def _build_clients() -> HttpClients:
         verifying=httpx.AsyncClient(limits=CONNECTION_LIMITS, verify=True),
         insecure=httpx.AsyncClient(limits=CONNECTION_LIMITS, verify=False),
     )
+
+
+async def _announce_startup(notifier: Notifier, settings: Settings, monitors: int) -> None:
+    """Tell the phone we are up. Never raises: a deploy must not fail over a notification."""
+    try:
+        await notifier.send(
+            startup_notification(
+                version=__version__,
+                monitors=monitors,
+                at=datetime.now(UTC),
+                link=settings.base_url or None,
+            )
+        )
+    except Exception:
+        log.exception("startup notification failed")
 
 
 @asynccontextmanager
@@ -96,6 +112,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await scheduler.start()
     await retention.start()
     log.info("talaia started", version=__version__, monitors=len(scheduler.running_monitors))
+
+    if settings.notify_on_startup:
+        await _announce_startup(notifier, settings, len(scheduler.running_monitors))
 
     try:
         yield

@@ -147,3 +147,12 @@ class TestTimezone:
         """Better a refusal to start than every timestamp silently wrong."""
         with pytest.raises(ValidationError, match="unknown timezone"):
             build(timezone="Mars/Olympus_Mons")
+
+
+class TestStartupNotification:
+    def test_it_is_on_by_default(self) -> None:
+        """A deploy that silently stopped notifying is the failure worth catching."""
+        assert build().notify_on_startup is True
+
+    def test_it_can_be_turned_off(self) -> None:
+        assert build(notify_on_startup=False).notify_on_startup is False

@@ -136,15 +136,30 @@ Start the application with no users and it logs a warning at startup saying exac
 then serves a login page nobody can get past. It does not create a default account, because
 a default account is a published password.
 
-### The cookie flag that will bite you
+### The Secure cookie flag follows `TALAIA_BASE_URL`
 
-`TALAIA_SESSION_COOKIE_SECURE` defaults to **true**, which means the browser will not send
-the session cookie over plain `http://`. Reaching Talaia at `http://10.0.0.x:9999` with the
-default leaves you at a login form that accepts your password and then bounces you straight
-back to it, with no error — the login worked, the cookie was simply never returned.
+A `Secure` cookie is never sent over plain `http://`. Get the flag wrong and the symptom is
+a login that accepts your password and bounces you straight back to the form with no error —
+the login worked, the cookie was simply never returned.
 
-Set it to `false` for plain-HTTP LAN access, or put Talaia behind HTTPS and leave it alone.
-`compose.dev.yaml` already sets it false.
+So it is derived rather than set: when `TALAIA_BASE_URL` starts with `https://` the cookie
+is Secure, otherwise it is not. Reaching Talaia at `http://10.0.0.x:9999` and at
+`https://talaia.example.org` both just work, provided `TALAIA_BASE_URL` says which one you
+mean.
+
+`TALAIA_SESSION_COOKIE_SECURE` still exists as an explicit override for the case where the
+public URL and the URL you actually use disagree. Leave it unset otherwise.
+
+### Behind a reverse proxy on another host
+
+uvicorn only trusts `X-Forwarded-For` and `X-Forwarded-Proto` from `127.0.0.1`. If the
+proxy runs on a different machine, every request appears to come from the proxy's address
+— in the access log, and in anything that will ever key on the client address. Name the
+proxy:
+
+```sh
+TALAIA_PROXY_IPS=10.0.0.6          # comma-separated for several, or * for any
+```
 
 ### How it is built
 

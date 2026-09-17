@@ -68,6 +68,28 @@ class TestGuard:
 
         assert "next=/monitors/web" in response.headers["location"]
 
+    async def test_the_query_string_is_remembered_too(self, anonymous: httpx.AsyncClient) -> None:
+        """Signing in from a 7-day chart must land back on the 7-day chart."""
+        response = await anonymous.get("/monitors/web?hours=168")
+
+        assert "next=/monitors/web%3Fhours%3D168" in response.headers["location"]
+
+    async def test_a_remembered_query_string_survives_the_round_trip(
+        self, anonymous: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        await make_user(session)
+
+        response = await anonymous.post(
+            "/login",
+            data={
+                "username": "isaac",
+                "password": TEST_PASSWORD,
+                "next": "/monitors/web?hours=168",
+            },
+        )
+
+        assert response.headers["location"] == "/monitors/web?hours=168"
+
     @pytest.mark.parametrize("path", ["/api/monitors", "/api/summary", "/api/incidents"])
     async def test_the_api_answers_401_in_json(
         self, anonymous: httpx.AsyncClient, path: str
@@ -148,7 +170,16 @@ class TestLogin:
 
         assert response.headers["location"] == "/monitors/web"
 
-    @pytest.mark.parametrize("target", ["http://evil.example", "//evil.example", "javascript:x"])
+    @pytest.mark.parametrize(
+        "target",
+        [
+            "http://evil.example",
+            "//evil.example",
+            "/\\evil.example",
+            "/\\\\evil.example",
+            "javascript:x",
+        ],
+    )
     async def test_an_offsite_next_is_refused(
         self, anonymous: httpx.AsyncClient, session: AsyncSession, target: str
     ) -> None:

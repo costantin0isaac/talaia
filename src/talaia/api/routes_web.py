@@ -52,7 +52,10 @@ def unauthenticated(request: Request, exc: StarletteHTTPException) -> Response:
         return response
 
     if wants_html(request):
-        target = quote(str(request.url.path), safe="/")
+        destination = request.url.path
+        if request.url.query:
+            destination = f"{destination}?{request.url.query}"
+        target = quote(destination, safe="/")
         return RedirectResponse(f"/login?next={target}", status_code=status.HTTP_303_SEE_OTHER)
 
     return JSONResponse({"detail": exc.detail}, status_code=status.HTTP_401_UNAUTHORIZED)

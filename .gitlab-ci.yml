@@ -130,3 +130,30 @@ integration:
     when: always
     reports:
       junit: report-integration.xml
+
+# Runs on the shell-executor runner on the Docker host itself, so it can reach the
+# deployment directory and the local Docker daemon. Manual on purpose: the pipeline says
+# the image is good, a person says now is a good time.
+production:
+  stage: deploy
+  tags:
+    - shell
+  environment:
+    name: production
+    url: $TALAIA_URL
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+    - if: $CI_COMMIT_TAG
+      when: manual
+  variables:
+    GIT_STRATEGY: none          # the checkout that matters is the one in TALAIA_DIR
+  script:
+    - cd "${TALAIA_DIR:-/opt/talaia}"
+    # A hard reset, never a pull: it is what guarantees the host matches the repository
+    # even if someone edited a file in place.
+    - git fetch --prune origin
+    - git reset --hard "${CI_COMMIT_TAG:-origin/$CI_DEFAULT_BRANCH}"
+    - docker compose -f compose.prod.yaml pull
+    - docker compose -f compose.prod.yaml up -d
+    - docker compose -f compose.prod.yaml ps

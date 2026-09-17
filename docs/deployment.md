@@ -76,6 +76,21 @@ Set `TALAIA_BASE_URL` to the public `https://` URL: it is what notification link
 at, and it is what makes the session cookie Secure. Add the proxy's address to
 `TALAIA_PROXY_IPS` so Talaia sees real client addresses instead of the proxy's.
 
+### Deploying from CI
+
+Once the host checkout exists, `main` and tag pipelines carry a manual `production` job.
+Pressing it runs the upgrade below on the Docker host, so a deploy is a button rather than
+four remembered commands.
+
+It needs two things on the GitLab side:
+
+- a **shell-executor runner** on the Docker host, tagged `shell`
+- two CI/CD variables: `TALAIA_DIR` (default `/opt/talaia`) and `TALAIA_URL` for the
+  environment link
+
+The job is `when: manual` deliberately. The pipeline says the image is good; a person says
+now is a good time.
+
 ### Upgrading
 
 ```sh

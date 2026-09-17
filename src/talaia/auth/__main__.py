@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from talaia.auth.passwords import WeakPasswordError, hash_password
 from talaia.db import repository as repo
 from talaia.db.engine import create_engine, create_session_factory
-from talaia.formatting import format_timestamp
+from talaia.formatting import format_timestamp, set_display_timezone
 from talaia.settings import get_settings
 
 USAGE = (
@@ -200,6 +200,7 @@ COMMANDS: dict[str, tuple[Handler, int]] = {
 async def run(command: str, *args: str) -> int:
     """Open a database session and run one command in it."""
     settings = get_settings()
+    set_display_timezone(settings.timezone)
     engine = create_engine(settings.database_url)
     factory = create_session_factory(engine)
     try:

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from talaia.formatting import set_display_timezone
 from talaia.settings import Settings, get_settings
 
 VALID_URL = "postgresql+asyncpg://talaia:pw@db:5432/talaia"
@@ -132,3 +133,17 @@ class TestProxyIps:
 
     def test_accepts_a_list(self) -> None:
         assert build(proxy_ips="10.0.0.6,10.0.0.7").proxy_ips == "10.0.0.6,10.0.0.7"
+
+
+class TestTimezone:
+    def test_defaults_to_unset(self) -> None:
+        assert build().timezone is None
+
+    def test_a_known_zone_is_accepted(self) -> None:
+        assert build(timezone="Europe/Madrid").timezone == "Europe/Madrid"
+        set_display_timezone(None)
+
+    def test_an_unknown_zone_fails_at_startup(self) -> None:
+        """Better a refusal to start than every timestamp silently wrong."""
+        with pytest.raises(ValidationError, match="unknown timezone"):
+            build(timezone="Mars/Olympus_Mons")

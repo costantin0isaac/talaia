@@ -1,14 +1,19 @@
 """Rendering of durations, timestamps, percentages and latencies."""
 
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from talaia.formatting import (
+    format_clock,
     format_duration,
     format_latency,
     format_percentage,
     format_timestamp,
+    set_display_timezone,
+    timezone_label,
 )
 
 AT = datetime(2026, 3, 14, 9, 30, 5, tzinfo=UTC)
@@ -62,3 +67,49 @@ class TestFormatLatency:
 
     def test_a_failed_check_has_no_latency(self) -> None:
         assert format_latency(None) == "—"
+
+
+@pytest.fixture
+def madrid() -> Iterator[None]:
+    """Render in Europe/Madrid for one test, then put UTC back."""
+    set_display_timezone("Europe/Madrid")
+    try:
+        yield
+    finally:
+        set_display_timezone(None)
+
+
+class TestDisplayTimezone:
+    def test_utc_by_default(self) -> None:
+        assert format_timestamp(AT) == "2026-03-14 09:30:05 UTC"
+
+    def test_a_configured_zone_shifts_the_clock_and_names_itself(self, madrid: None) -> None:
+        """Same instant, different wall clock, and the label says which."""
+        assert format_timestamp(AT) == "2026-03-14 10:30:05 CET"
+
+    def test_summer_time_is_handled_by_the_zone_not_by_us(self, madrid: None) -> None:
+        summer = datetime(2026, 7, 14, 9, 30, 5, tzinfo=UTC)
+
+        assert format_timestamp(summer) == "2026-07-14 11:30:05 CEST"
+
+    def test_the_clock_helper_follows_the_zone(self, madrid: None) -> None:
+        assert format_clock(AT) == "10:30"
+
+    def test_the_label_follows_the_zone(self, madrid: None) -> None:
+        assert timezone_label(AT) == "CET"
+
+    def test_none_means_utc(self) -> None:
+        set_display_timezone("Europe/Madrid")
+        set_display_timezone(None)
+
+        assert format_timestamp(AT).endswith("UTC")
+
+    def test_an_unknown_zone_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="unknown timezone"):
+            set_display_timezone("Mars/Olympus_Mons")
+
+    def test_an_aware_input_in_another_zone_is_converted(self, madrid: None) -> None:
+        """Storage is UTC, but nothing should break if a value arrives with an offset."""
+        tokyo = AT.astimezone(ZoneInfo("Asia/Tokyo"))
+
+        assert format_timestamp(tokyo) == "2026-03-14 10:30:05 CET"

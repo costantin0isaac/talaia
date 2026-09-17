@@ -6,11 +6,18 @@ The functions are pure, which is what makes the presentation layer testable at a
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Literal
 
 from talaia.db.models import CheckResult, Incident, Monitor, MonitorState, MonitorStatus
-from talaia.formatting import format_duration, format_latency, format_percentage, format_timestamp
+from talaia.formatting import (
+    format_clock,
+    format_duration,
+    format_latency,
+    format_percentage,
+    format_timestamp,
+    timezone_label,
+)
 
 STRIP_SIZE = 40
 
@@ -115,6 +122,7 @@ class LatencyChart:
     sample_count: int
     latency_ticks: tuple[Tick, ...] = ()
     time_ticks: tuple[Tick, ...] = ()
+    timezone: str = "UTC"
     plot_left: float = CHART_LEFT
     plot_right: float = CHART_WIDTH - CHART_RIGHT
     plot_top: float = CHART_TOP
@@ -302,6 +310,7 @@ def latency_chart(
         sample_count=len(ordered),
         latency_ticks=_latency_ticks(max_latency, y_for),
         time_ticks=_time_ticks(ordered, x_for),
+        timezone=timezone_label(ordered[-1].checked_at),
         plot_left=left,
         plot_right=right,
         plot_top=top,
@@ -323,7 +332,7 @@ def _time_ticks(
     seen: dict[float, Tick] = {}
     for moment in moments:
         position = round(x_for(moment), 2)
-        seen[position] = Tick(position=position, label=moment.astimezone(UTC).strftime("%H:%M"))
+        seen[position] = Tick(position=position, label=format_clock(moment))
     return tuple(seen.values())
 
 

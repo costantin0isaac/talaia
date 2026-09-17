@@ -23,6 +23,7 @@ from talaia.db import repository as repo
 from talaia.db.engine import create_engine, create_session_factory
 from talaia.engine.retention import RetentionTask
 from talaia.engine.scheduler import Scheduler
+from talaia.formatting import set_display_timezone
 from talaia.logging import configure_logging, get_logger
 from talaia.metrics.registry import Metrics
 from talaia.notify.base import Notifier, NullNotifier
@@ -112,6 +113,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the application."""
     resolved = settings or get_settings()
     configure_logging(level=resolved.log_level, log_format=resolved.log_format)
+    set_display_timezone(resolved.timezone)
 
     app = FastAPI(
         title="Talaia",

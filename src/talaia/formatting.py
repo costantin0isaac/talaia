@@ -1,9 +1,15 @@
 """Rendering durations and timestamps for people to read.
 
-Shared by the notifier and the web UI, which must phrase the same facts the same way.
+Shared by the notifier, the web UI and the CLI, which must phrase the same facts the same
+way. The display timezone is module state, set once at startup: threading it through every
+caller would mean passing it down to individual table cells, and every one of them wants
+the same answer.
+
+Storage stays UTC everywhere. This affects only what a person reads.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, tzinfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 SECONDS_PER_MINUTE = 60
 MINUTES_PER_HOUR = 60
@@ -27,9 +33,45 @@ def format_duration(seconds: int) -> str:
     return f"{days}d {remaining_hours}h" if remaining_hours else f"{days}d"
 
 
+_display_zone: tzinfo = UTC
+
+
+def set_display_timezone(name: str | None) -> None:
+    """Choose the timezone timestamps are rendered in. ``None`` means UTC.
+
+    Raises:
+        ValueError: The name is not in the IANA database.
+    """
+    global _display_zone
+    if not name:
+        _display_zone = UTC
+        return
+    try:
+        _display_zone = ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        msg = f"unknown timezone {name!r}; use an IANA name such as 'Europe/Madrid'"
+        raise ValueError(msg) from exc
+
+
+def display_timezone() -> tzinfo:
+    """Return the timezone timestamps are currently rendered in."""
+    return _display_zone
+
+
 def format_timestamp(moment: datetime) -> str:
-    """Render a moment as a UTC wall clock, matching the log timestamps."""
-    return moment.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+    """Render a moment as a wall clock in the display timezone, named so it is unambiguous."""
+    return moment.astimezone(_display_zone).strftime("%Y-%m-%d %H:%M:%S %Z")
+
+
+def format_clock(moment: datetime) -> str:
+    """Render just the time of day, for a chart axis."""
+    return moment.astimezone(_display_zone).strftime("%H:%M")
+
+
+def timezone_label(moment: datetime | None = None) -> str:
+    """Return the short name of the display timezone, such as ``UTC`` or ``CEST``."""
+    reference = moment or datetime.now(UTC)
+    return reference.astimezone(_display_zone).strftime("%Z")
 
 
 def format_percentage(ratio: float | None, *, digits: int = 2) -> str:

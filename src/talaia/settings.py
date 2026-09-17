@@ -7,6 +7,8 @@ from typing import Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from talaia.formatting import set_display_timezone
+
 LogFormat = Literal["json", "console"]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
@@ -51,6 +53,14 @@ class Settings(BaseSettings):
             "https means secure. Set explicitly only to override that."
         ),
     )
+    timezone: str | None = Field(
+        default=None,
+        description=(
+            "IANA timezone for displayed times, such as Europe/Madrid. Unset means UTC. "
+            "Storage is always UTC; this changes only what is rendered."
+        ),
+    )
+
     metrics_token: str | None = Field(
         default=None,
         description=(
@@ -100,6 +110,14 @@ class Settings(BaseSettings):
         default="unknown",
         description="Commit this image was built from, reported by talaia_build_info.",
     )
+
+    @field_validator("timezone")
+    @classmethod
+    def _require_known_timezone(cls, value: str | None) -> str | None:
+        """Reject a timezone the system cannot resolve, at startup rather than at render."""
+        if value:
+            set_display_timezone(value)
+        return value
 
     @field_validator("database_url")
     @classmethod

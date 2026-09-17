@@ -23,6 +23,7 @@ dependencies = [
     "structlog>=25.5",
     "argon2-cffi>=25.1",
     "python-multipart>=0.0.20",
+    "tzdata>=2026.4",
 ]
 
 [project.urls]

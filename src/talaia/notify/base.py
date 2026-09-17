@@ -6,10 +6,11 @@ from typing import Literal, Protocol
 
 from talaia.formatting import format_duration, format_timestamp
 
-Priority = Literal["default", "high"]
+Priority = Literal["low", "default", "high"]
 
 DOWN_TAG = "rotating_light"
 UP_TAG = "white_check_mark"
+STARTUP_TAG = "eyes"
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,5 +96,34 @@ def up_notification(
         body=body,
         priority="default",
         tag=UP_TAG,
+        link=link,
+    )
+
+
+def startup_notification(
+    *,
+    version: str,
+    monitors: int,
+    at: datetime,
+    link: str | None = None,
+) -> Notification:
+    """Build the message announcing that Talaia has started watching.
+
+    Low priority on purpose: this is not an event anyone must act on. It earns its place
+    by proving the whole notification path works after every deploy, which otherwise is
+    only ever tested by breaking something.
+    """
+    body = "\n".join(
+        [
+            f"Watching {monitors} monitor{'' if monitors == 1 else 's'}",
+            f"Version {version}",
+            f"Started: {format_timestamp(at)}",
+        ]
+    )
+    return Notification(
+        title="👁 talaia is watching",
+        body=body,
+        priority="low",
+        tag=STARTUP_TAG,
         link=link,
     )

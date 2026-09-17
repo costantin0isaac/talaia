@@ -100,6 +100,19 @@ Two messages per incident:
 | Down | 🔴 `<name>` is DOWN | target, error, timestamp | high |
 | Up | 🟢 `<name>` recovered | downtime duration, timestamp | default |
 
+### One message on startup
+
+```sh
+TALAIA_NOTIFY_ON_STARTUP=true    # the default
+```
+
+A low-priority message — "👁 talaia is watching, 20 monitors" — every time the process
+starts. It is not an alarm and nothing needs acting on. It is there because otherwise the
+only way to find out that notifications still work after a deploy is to break a service on
+purpose, and a path that is never exercised is a path that quietly rots.
+
+Set it false if a restart-heavy afternoon becomes annoying.
+
 ### Why an outage produces exactly two messages
 
 Notifications are tied to state *transitions*, not to failed checks, so a service that is

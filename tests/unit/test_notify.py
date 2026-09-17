@@ -12,6 +12,7 @@ from talaia.notify.base import (
     Notification,
     NullNotifier,
     down_notification,
+    startup_notification,
     up_notification,
 )
 from talaia.notify.ntfy import NtfyNotifier
@@ -204,3 +205,39 @@ class TestDelivery:
         await owned.aclose()
 
         assert owned._client.is_closed is True
+
+
+class TestStartupNotification:
+    def test_says_what_is_being_watched(self) -> None:
+        notification = startup_notification(version="1.1.0", monitors=20, at=AT)
+
+        assert notification.title == "👁 talaia is watching"
+        assert "Watching 20 monitors" in notification.body
+        assert "Version 1.1.0" in notification.body
+        assert "Started: 2026-03-14 09:30:05 UTC" in notification.body
+
+    def test_it_is_low_priority(self) -> None:
+        """Nobody must act on it; it is a receipt, not an alarm."""
+        assert startup_notification(version="1.1.0", monitors=1, at=AT).priority == "low"
+
+    def test_one_monitor_is_not_plural(self) -> None:
+        assert (
+            "Watching 1 monitor\n" in startup_notification(version="1.1.0", monitors=1, at=AT).body
+        )
+
+    def test_it_can_carry_a_link(self) -> None:
+        notification = startup_notification(
+            version="1.1.0", monitors=3, at=AT, link="http://talaia.lan"
+        )
+
+        assert notification.link == "http://talaia.lan"
+
+
+class TestLowPriorityMapping:
+    @respx.mock
+    async def test_low_maps_to_ntfy_priority_two(self, notifier: NtfyNotifier) -> None:
+        route = respx.post(f"{SERVER}/").mock(return_value=httpx.Response(200))
+
+        await notifier.send(startup_notification(version="1.1.0", monitors=2, at=AT))
+
+        assert json.loads(route.calls.last.request.read())["priority"] == 2

@@ -53,6 +53,14 @@ class Settings(BaseSettings):
             "https means secure. Set explicitly only to override that."
         ),
     )
+    notify_on_startup: bool = Field(
+        default=True,
+        description=(
+            "Send a low-priority notification when Talaia starts. Proves the notification "
+            "path works after a deploy without having to break something."
+        ),
+    )
+
     timezone: str | None = Field(
         default=None,
         description=(

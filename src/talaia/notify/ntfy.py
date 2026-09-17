@@ -17,7 +17,7 @@ BACKOFF_SECONDS = (1.0, 3.0)
 TIMEOUT_SECONDS = 10.0
 USER_AGENT = f"talaia/{__version__}"
 
-PRIORITIES: dict[Priority, int] = {"default": 3, "high": 4}
+PRIORITIES: dict[Priority, int] = {"low": 2, "default": 3, "high": 4}
 
 
 @dataclass(frozen=True, slots=True)

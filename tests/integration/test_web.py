@@ -809,3 +809,37 @@ class TestStatusShape:
         assert "border-radius: 2px" in response.text  # down is a square
         assert "rotate(45deg)" in response.text  # paused is a diamond
         assert "border: 2px solid var(--unknown)" in response.text  # unknown is hollow
+
+
+class TestLatencyStats:
+    async def test_mean_latency_is_shown_from_the_rollups(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        """The rollup column was written hourly and displayed nowhere until now."""
+        monitor = await make_monitor(session, "web")
+        session.add(
+            DailyUptime(
+                monitor_id=monitor.id,
+                day=NOW.date(),
+                total_checks=100,
+                successful_checks=99,
+                avg_latency_ms=42,
+            )
+        )
+        await session.flush()
+
+        response = await client.get("/monitors/web")
+
+        assert "mean 7 days" in response.text
+        assert "mean 30 days" in response.text
+        assert "42 ms" in response.text
+
+    async def test_a_monitor_with_no_rollups_shows_a_dash(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        await make_monitor(session, "web")
+
+        response = await client.get("/monitors/web")
+
+        assert "mean 7 days" in response.text
+        assert "—" in response.text

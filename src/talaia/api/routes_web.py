@@ -12,7 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from talaia.api.dependencies import AuthenticatedUser, get_session
 from talaia.db import repository as repo
 from talaia.db.models import Monitor, MonitorStatus
-from talaia.formatting import format_percentage
+from talaia.formatting import format_latency, format_percentage
 from talaia.web import view
 from talaia.web.templates_env import templates
 
@@ -177,6 +177,16 @@ async def monitor_detail(
         ),
         uptime_30d=format_percentage(
             await repo.uptime_since_day(session, monitor.id, since=today - timedelta(days=29))
+        ),
+        latency_7d=format_latency(
+            await repo.average_latency_since_day(
+                session, monitor.id, since=today - timedelta(days=6)
+            )
+        ),
+        latency_30d=format_latency(
+            await repo.average_latency_since_day(
+                session, monitor.id, since=today - timedelta(days=29)
+            )
         ),
         chart=view.latency_chart(chart_results),
         incidents=view.incident_rows(incidents, now=now),

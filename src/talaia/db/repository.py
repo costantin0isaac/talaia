@@ -192,6 +192,30 @@ async def uptime_since_day(session: AsyncSession, monitor_id: int, *, since: dat
     return float(successful) / float(total)
 
 
+async def average_latency_since_day(
+    session: AsyncSession, monitor_id: int, *, since: date
+) -> int | None:
+    """Return the mean latency from the daily rollups, weighted by each day's check count.
+
+    Averaging the daily averages would weigh a quiet day the same as a busy one; this
+    weights by ``total_checks`` so the answer matches what the raw results would have said
+    before they were pruned. Days with no latency at all -- every check failed -- are
+    excluded rather than counted as zero.
+    """
+    weighted = func.sum(DailyUptime.avg_latency_ms * DailyUptime.total_checks)
+    counted = func.sum(DailyUptime.total_checks)
+    statement = select(weighted, counted).where(
+        DailyUptime.monitor_id == monitor_id,
+        DailyUptime.day >= since,
+        DailyUptime.avg_latency_ms.is_not(None),
+    )
+    total_latency, total_checks = (await session.execute(statement)).one()
+    if not total_checks or total_latency is None:
+        return None
+    mean: float = float(total_latency) / float(total_checks)
+    return round(mean)
+
+
 async def uptime_ratio(session: AsyncSession, monitor_id: int, *, since: datetime) -> float | None:
     """Return the fraction of successful checks since ``since``, or None if there were none."""
     statement = select(func.count(), func.count().filter(CheckResult.success.is_(True))).where(

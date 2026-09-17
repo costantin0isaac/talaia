@@ -13,7 +13,7 @@ def main() -> None:
 
     One worker only: each worker would run its own scheduler and duplicate every check.
     """
-    get_settings()
+    settings = get_settings()
     uvicorn.run(
         "talaia.api.app:create_app",
         factory=True,
@@ -21,6 +21,10 @@ def main() -> None:
         port=PORT,
         workers=1,
         log_config=None,
+        # Without this, a proxy on another host is the client in every log line and in
+        # anything that ever keys on the client address.
+        proxy_headers=True,
+        forwarded_allow_ips=settings.proxy_ips,
     )
 
 

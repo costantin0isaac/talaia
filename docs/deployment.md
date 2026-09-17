@@ -72,8 +72,9 @@ talaia.example.org {
 }
 ```
 
-With HTTPS terminating at the proxy, leave `TALAIA_SESSION_COOKIE_SECURE=true` and set
-`TALAIA_BASE_URL` to the public URL — that is what notification links point at.
+Set `TALAIA_BASE_URL` to the public `https://` URL: it is what notification links point
+at, and it is what makes the session cookie Secure. Add the proxy's address to
+`TALAIA_PROXY_IPS` so Talaia sees real client addresses instead of the proxy's.
 
 ### Upgrading
 

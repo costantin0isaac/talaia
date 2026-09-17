@@ -33,8 +33,12 @@ INVALID_CREDENTIALS = "Wrong username or password."
 
 
 def safe_next(target: str | None) -> str:
-    """Return a local redirect target, refusing anything that leaves this site."""
-    if not target or not target.startswith("/") or target.startswith("//"):
+    """Return a local redirect target, refusing anything that leaves this site.
+
+    The second character may be neither a slash nor a backslash: browsers normalise a
+    backslash there to a slash, so a backslash variant would still be an open redirect.
+    """
+    if not target or not target.startswith("/") or target[1:2] in ("/", "\\"):
         return "/"
     return target
 
@@ -107,7 +111,7 @@ async def logout(request: Request, session: SessionDep) -> Response:
         settings.session_cookie_name,
         httponly=True,
         samesite="lax",
-        secure=settings.session_cookie_secure,
+        secure=settings.cookie_secure,
     )
     return response
 
@@ -125,6 +129,6 @@ def set_session_cookie(response: Response, token: str, *, settings: Settings) ->
         max_age=settings.session_ttl_hours * 3600,
         httponly=True,
         samesite="lax",
-        secure=settings.session_cookie_secure,
+        secure=settings.cookie_secure,
         path="/",
     )

@@ -44,9 +44,19 @@ class Settings(BaseSettings):
         description="How long a login lasts before it must be repeated.",
     )
     session_cookie_name: str = "talaia_session"
-    session_cookie_secure: bool = Field(
-        default=True,
-        description="Send the session cookie only over HTTPS. Set false for plain-HTTP LAN access.",
+    session_cookie_secure: bool | None = Field(
+        default=None,
+        description=(
+            "Mark the session cookie Secure. Unset, it follows the scheme of base_url: "
+            "https means secure. Set explicitly only to override that."
+        ),
+    )
+    proxy_ips: str | None = Field(
+        default=None,
+        description=(
+            "Comma-separated addresses of reverse proxies whose X-Forwarded-* headers are "
+            "trusted, or '*' for any. Unset, only 127.0.0.1 is trusted."
+        ),
     )
 
     ntfy_url: str | None = None
@@ -78,6 +88,18 @@ class Settings(BaseSettings):
             )
             raise ValueError(msg)
         return value
+
+    @property
+    def cookie_secure(self) -> bool:
+        """Whether the session cookie carries the Secure flag.
+
+        A Secure cookie is never sent over plain http://, so a wrong value here looks like
+        a login that succeeds and then silently bounces back to the form. Deriving it from
+        ``base_url`` removes the way to get it wrong by default.
+        """
+        if self.session_cookie_secure is not None:
+            return self.session_cookie_secure
+        return self.base_url.lower().startswith("https://")
 
     @property
     def notifications_enabled(self) -> bool:

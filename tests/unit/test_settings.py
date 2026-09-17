@@ -104,3 +104,31 @@ class TestEnvironmentParsing:
         assert get_settings() is get_settings()
 
         get_settings.cache_clear()
+
+
+class TestCookieSecure:
+    def test_follows_an_https_base_url(self) -> None:
+        assert build(base_url="https://talaia.example.org").cookie_secure is True
+
+    def test_follows_an_http_base_url(self) -> None:
+        """Plain http:// would never send a Secure cookie back, so it must not be set."""
+        assert build(base_url="http://10.0.0.5:9999").cookie_secure is False
+
+    def test_the_default_base_url_is_not_secure(self) -> None:
+        assert build().cookie_secure is False
+
+    @pytest.mark.parametrize("explicit", [True, False])
+    def test_an_explicit_setting_wins(self, explicit: bool) -> None:
+        secure_url = build(base_url="https://x.example", session_cookie_secure=explicit)
+        plain_url = build(base_url="http://x.example", session_cookie_secure=explicit)
+
+        assert secure_url.cookie_secure is explicit
+        assert plain_url.cookie_secure is explicit
+
+
+class TestProxyIps:
+    def test_defaults_to_unset(self) -> None:
+        assert build().proxy_ips is None
+
+    def test_accepts_a_list(self) -> None:
+        assert build(proxy_ips="10.0.0.6,10.0.0.7").proxy_ips == "10.0.0.6,10.0.0.7"

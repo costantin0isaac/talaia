@@ -149,6 +149,29 @@ async def apply_outcome(
     return change
 
 
+class FailureStreak:
+    """Tracks consecutive check-cycle failures for one monitor, to keep the log readable.
+
+    Twenty monitors on a one-minute interval log a traceback every three seconds while
+    the database is unreachable. The first failure of a streak deserves the traceback;
+    the rest deserve a line, and the recovery deserves one too.
+    """
+
+    def __init__(self) -> None:
+        self.count = 0
+
+    def record_failure(self) -> bool:
+        """Note a failure; return whether it is the first of a streak."""
+        self.count += 1
+        return self.count == 1
+
+    def record_success(self) -> bool:
+        """Note a success; return whether it ended a streak."""
+        recovered = self.count > 0
+        self.count = 0
+        return recovered
+
+
 class Scheduler:
     """Owns one asyncio task per active, enabled monitor."""
 
@@ -283,16 +306,28 @@ class Scheduler:
         if self._jitter:
             await asyncio.sleep(random.uniform(0, config.interval))
 
+        streak = FailureStreak()
         while not self._stopping.is_set():
             started = time.perf_counter()
             try:
                 await self._check_once(config)
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except Exception as exc:
                 # The task must survive anything short of cancellation; a dead task would
                 # stop monitoring this target silently.
-                log.exception("check cycle failed", monitor=config.name)
+                if streak.record_failure():
+                    log.exception("check cycle failed", monitor=config.name)
+                else:
+                    log.warning(
+                        "check cycle still failing",
+                        monitor=config.name,
+                        consecutive=streak.count,
+                        error=f"{type(exc).__name__}: {exc}",
+                    )
+            else:
+                if streak.record_success():
+                    log.info("check cycle recovered", monitor=config.name)
 
             elapsed = time.perf_counter() - started
             await asyncio.sleep(max(0.0, config.interval - elapsed))
@@ -304,14 +339,16 @@ class Scheduler:
 
         outcome = await checker.check(config)
         checked_at = self._clock()
-        if self._recorder is not None:
-            self._recorder.record_check(config.name, success=outcome.success)
 
         async with self._session_factory() as session, session.begin():
             monitor = await repo.get_monitor_by_name(session, config.name)
             if monitor is None:
                 return
             change = await apply_outcome(session, monitor, outcome, checked_at=checked_at)
+
+        # After the commit, so the counter never exceeds what check_results holds.
+        if self._recorder is not None:
+            self._recorder.record_check(config.name, success=outcome.success)
 
         if change.notifies:
             self._announce(config, change, outcome)

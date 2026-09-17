@@ -359,3 +359,67 @@ class TestScheduler:
             assert scheduler.is_running("web")
         finally:
             await scheduler.stop()
+
+
+class TestCheckCounter:
+    async def test_a_check_that_is_not_persisted_is_not_counted(
+        self, committed_factory: async_sessionmaker[AsyncSession]
+    ) -> None:
+        """The counter must never exceed what check_results holds."""
+        recorded: list[str] = []
+
+        class Recorder:
+            def record_check(self, monitor: str, *, success: bool) -> None:
+                recorded.append(monitor)
+
+        scheduler = Scheduler(
+            committed_factory,
+            CheckerRegistry({MonitorType.HTTP: FakeChecker()}),
+            jitter=False,
+            recorder=Recorder(),
+        )
+
+        # No row for this monitor exists, so the write path returns before persisting.
+        await scheduler._check_once(config_for("ghost"))
+
+        assert recorded == []
+
+    async def test_a_persisted_check_is_counted_once(
+        self, committed_factory: async_sessionmaker[AsyncSession]
+    ) -> None:
+        async with committed_factory() as setup:
+            await make_monitor(setup, "web")
+            await setup.commit()
+        recorded: list[str] = []
+
+        class Recorder:
+            def record_check(self, monitor: str, *, success: bool) -> None:
+                recorded.append(monitor)
+
+        scheduler = Scheduler(
+            committed_factory,
+            CheckerRegistry({MonitorType.HTTP: FakeChecker()}),
+            jitter=False,
+            recorder=Recorder(),
+        )
+
+        await scheduler._check_once(config_for("web"))
+
+        assert recorded == ["web"]
+
+
+def config_for(name: str) -> MonitorConfig:
+    return MonitorConfig(
+        name=name,
+        type=MonitorType.HTTP,
+        target="http://10.0.0.1",
+        group=None,
+        description=None,
+        interval=60,
+        timeout=10,
+        failure_threshold=3,
+        recovery_threshold=2,
+        enabled=True,
+        http=None,
+        tls=None,
+    )

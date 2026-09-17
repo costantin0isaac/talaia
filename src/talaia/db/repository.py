@@ -488,6 +488,28 @@ async def touch_session(
     return result.rowcount > 0
 
 
+async def list_sessions_for_user(session: AsyncSession, user_id: int) -> Sequence[Session]:
+    """Return a user's sessions, newest first, expired ones included until pruned."""
+    statement = (
+        select(Session).where(Session.user_id == user_id).order_by(Session.created_at.desc())
+    )
+    return (await session.scalars(statement)).all()
+
+
+async def find_sessions_by_prefix(
+    session: AsyncSession, user_id: int, prefix: str
+) -> Sequence[Session]:
+    """Return a user's sessions whose token hash starts with ``prefix``.
+
+    The full hash is 64 characters; the operator types the first few. Returning every
+    match lets the caller refuse an ambiguous prefix instead of guessing.
+    """
+    statement = select(Session).where(
+        Session.user_id == user_id, Session.token_hash.startswith(prefix)
+    )
+    return (await session.scalars(statement)).all()
+
+
 async def delete_session(session: AsyncSession, token_hash: str) -> None:
     """Forget one session, on logout."""
     await session.execute(delete(Session).where(Session.token_hash == token_hash))

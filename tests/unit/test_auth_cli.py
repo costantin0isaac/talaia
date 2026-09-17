@@ -34,12 +34,12 @@ class TestPromptPassword:
 
 class TestMain:
     @pytest.fixture(autouse=True)
-    def no_database(self, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
+    def no_database(self, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, ...]]:
         """Record what would have been run instead of opening a database."""
-        calls: list[tuple[str, str]] = []
+        calls: list[tuple[str, ...]] = []
 
-        async def fake_run(command: str, username: str) -> int:
-            calls.append((command, username))
+        async def fake_run(command: str, *args: str) -> int:
+            calls.append((command, *args))
             return 0
 
         monkeypatch.setattr(cli, "run", fake_run)
@@ -60,15 +60,28 @@ class TestMain:
         assert cli.main([command]) == 2
         assert cli.USAGE in capsys.readouterr().err
 
-    def test_list_needs_no_username(self, no_database: list[tuple[str, str]]) -> None:
+    def test_list_needs_no_username(self, no_database: list[tuple[str, ...]]) -> None:
         assert cli.main(["list"]) == 0
-        assert no_database == [("list", "")]
+        assert no_database == [("list",)]
 
-    def test_the_username_is_passed_through(self, no_database: list[tuple[str, str]]) -> None:
+    def test_the_username_is_passed_through(self, no_database: list[tuple[str, ...]]) -> None:
         assert cli.main(["add", "isaac"]) == 0
         assert no_database == [("add", "isaac")]
 
+    def test_revoke_needs_a_user_and_a_session_id(self, capsys: pytest.CaptureFixture[str]) -> None:
+        assert cli.main(["revoke", "isaac"]) == 2
+        assert cli.USAGE in capsys.readouterr().err
+
+    def test_too_many_arguments_is_also_wrong(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """A stray extra word is more likely a mistake than an intention."""
+        assert cli.main(["list", "isaac"]) == 2
+        assert cli.USAGE in capsys.readouterr().err
+
+    def test_revoke_passes_both_arguments(self, no_database: list[tuple[str, ...]]) -> None:
+        assert cli.main(["revoke", "isaac", "3f9a"]) == 0
+        assert no_database == [("revoke", "isaac", "3f9a")]
+
     def test_every_documented_command_is_wired(self) -> None:
         """The module docstring is the user manual; it must not promise a missing command."""
-        for command in ("add", "list", "passwd", "disable"):
+        for command in ("add", "list", "passwd", "disable", "sessions", "revoke"):
             assert command in cli.COMMANDS

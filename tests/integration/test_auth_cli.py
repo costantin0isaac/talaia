@@ -1,7 +1,7 @@
 """The user-management CLI against a real database."""
 
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +9,7 @@ from tests.integration.conftest import TEST_PASSWORD, TEST_PASSWORD_HASH, login
 
 from talaia.auth import __main__ as cli
 from talaia.auth.passwords import verify_password
-from talaia.auth.tokens import hash_token
+from talaia.auth.tokens import hash_token, new_token
 from talaia.db import repository as repo
 from talaia.settings import Settings
 
@@ -76,7 +76,7 @@ class TestList:
     async def test_says_how_to_fix_an_empty_instance(
         self, session: AsyncSession, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        assert await cli.show(session, "") == 0
+        assert await cli.show(session) == 0
         assert "python -m talaia.auth add" in capsys.readouterr().out
 
     async def test_shows_state_and_last_login(
@@ -88,7 +88,7 @@ class TestList:
         fresh.active = False
         await session.flush()
 
-        assert await cli.show(session, "") == 0
+        assert await cli.show(session) == 0
 
         out = capsys.readouterr().out
         assert "fresh" in out and "disabled" in out and "never" in out
@@ -191,5 +191,131 @@ class TestRun:
         settings = Settings(_env_file=None, database_url=database_url)  # type: ignore[call-arg]
         monkeypatch.setattr(cli, "get_settings", lambda: settings)
 
-        assert await cli.run("list", "") == 0
+        assert await cli.run("list") == 0
         assert "no users" in capsys.readouterr().out
+
+
+async def make_session(
+    session: AsyncSession, user_id: int, *, expires_in: timedelta = timedelta(hours=1)
+) -> str:
+    """Create a session row directly and return its token hash."""
+    token = new_token()
+    await repo.create_session(
+        session,
+        token_hash=hash_token(token),
+        user_id=user_id,
+        expires_at=datetime.now(UTC) + expires_in,
+    )
+    await session.flush()
+    return hash_token(token)
+
+
+class TestSessions:
+    async def test_an_unknown_user_is_an_error(
+        self, session: AsyncSession, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        assert await cli.sessions(session, "ghost") == 1
+        assert "no user 'ghost'" in capsys.readouterr().err
+
+    async def test_a_user_with_no_sessions(
+        self, session: AsyncSession, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        await repo.create_user(session, username="isaac", password_hash=TEST_PASSWORD_HASH)
+
+        assert await cli.sessions(session, "isaac") == 0
+        assert "has no sessions" in capsys.readouterr().out
+
+    async def test_lists_each_session_with_its_state(
+        self, session: AsyncSession, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """This is where last_seen_at finally gets read."""
+        user = await repo.create_user(session, username="isaac", password_hash=TEST_PASSWORD_HASH)
+        live = await make_session(session, user.id)
+        stale = await make_session(session, user.id, expires_in=timedelta(hours=-1))
+        await repo.touch_session(
+            session,
+            live,
+            now=datetime(2026, 3, 14, 9, 30, tzinfo=UTC),
+            not_before=datetime.now(UTC),
+        )
+
+        assert await cli.sessions(session, "isaac") == 0
+
+        out = capsys.readouterr().out
+        assert live[: cli.SESSION_ID_LENGTH] in out
+        assert stale[: cli.SESSION_ID_LENGTH] in out
+        assert "active" in out and "expired" in out
+        assert "2026-03-14 09:30:00 UTC" in out  # last seen
+        assert "never" in out  # the other one was never used
+
+
+class TestRevoke:
+    async def test_an_unknown_user_is_an_error(
+        self, session: AsyncSession, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        assert await cli.revoke(session, "ghost", "abc") == 1
+        assert "no user 'ghost'" in capsys.readouterr().err
+
+    async def test_ends_one_session_by_prefix_and_leaves_the_rest(
+        self, session: AsyncSession, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        user = await repo.create_user(session, username="isaac", password_hash=TEST_PASSWORD_HASH)
+        doomed = await make_session(session, user.id)
+        kept = await make_session(session, user.id)
+
+        assert await cli.revoke(session, "isaac", doomed[: cli.SESSION_ID_LENGTH]) == 0
+
+        remaining = {row.token_hash for row in await repo.list_sessions_for_user(session, user.id)}
+        assert remaining == {kept}
+        assert "ended for isaac" in capsys.readouterr().out
+
+    async def test_a_prefix_matching_nothing_is_an_error(
+        self, session: AsyncSession, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        user = await repo.create_user(session, username="isaac", password_hash=TEST_PASSWORD_HASH)
+        await make_session(session, user.id)
+
+        assert await cli.revoke(session, "isaac", "zzzzzz") == 1
+        assert "starts with" in capsys.readouterr().err
+
+    async def test_an_ambiguous_prefix_is_refused(
+        self, session: AsyncSession, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Guessing which of two sessions to kill would be worse than doing nothing."""
+        user = await repo.create_user(session, username="isaac", password_hash=TEST_PASSWORD_HASH)
+        first = await make_session(session, user.id)
+        second = await make_session(session, user.id)
+        shared = ""
+        for a, b in zip(first, second, strict=False):
+            if a != b:
+                break
+            shared += a
+        # An empty prefix matches everything, which is the most ambiguous case of all.
+        assert await cli.revoke(session, "isaac", shared) == 1
+        assert "matches 2 sessions" in capsys.readouterr().err
+        assert len(await repo.list_sessions_for_user(session, user.id)) == 2
+
+    async def test_all_ends_every_session(
+        self, session: AsyncSession, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        user = await repo.create_user(session, username="isaac", password_hash=TEST_PASSWORD_HASH)
+        await make_session(session, user.id)
+        await make_session(session, user.id)
+
+        assert await cli.revoke(session, "isaac", "all") == 0
+
+        assert await repo.list_sessions_for_user(session, user.id) == []
+        assert "2 session(s) ended" in capsys.readouterr().out
+
+    async def test_a_revoked_session_can_no_longer_authenticate(
+        self, session: AsyncSession
+    ) -> None:
+        token = await login(session, username="isaac")
+        user = await repo.get_user_by_name(session, "isaac")
+        assert user is not None
+
+        assert await cli.revoke(session, "isaac", hash_token(token)[: cli.SESSION_ID_LENGTH]) == 0
+
+        assert (
+            await repo.get_session_user(session, hash_token(token), now=datetime.now(UTC)) is None
+        )

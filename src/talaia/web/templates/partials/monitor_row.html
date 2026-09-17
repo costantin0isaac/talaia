@@ -2,7 +2,7 @@
     class="monitor-row"
     data-status="{{ row.status }}"
     hx-get="/partials/monitors/{{ row.name }}/row"
-    hx-trigger="every {{ poll_seconds }}s"
+    hx-trigger="every {{ poll_seconds }}s [!document.hidden]"
     hx-swap="outerHTML">
   <td class="cell-status">
     <span class="dot dot-{{ row.status }}" title="{{ row.status_label }}"></span>

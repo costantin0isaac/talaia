@@ -1,6 +1,6 @@
 <section id="summary" class="summary"
          hx-get="/partials/summary"
-         hx-trigger="every {{ poll_seconds }}s"
+         hx-trigger="every {{ poll_seconds }}s [!document.hidden]"
          hx-swap="outerHTML">
   <div class="stat">
     <span class="stat-value">{{ summary.total }}</span>

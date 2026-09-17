@@ -152,7 +152,7 @@ class TestDashboard:
         response = await client.get("/")
 
         assert 'hx-get="/partials/monitors/web/row"' in response.text
-        assert 'hx-trigger="every 15s"' in response.text
+        assert 'hx-trigger="every 15s [!document.hidden]"' in response.text
         assert 'hx-swap="outerHTML"' in response.text
 
     async def test_the_strip_shows_successes_and_failures(
@@ -207,7 +207,7 @@ class TestPartials:
 
         response = await client.get("/partials/monitors/web/row")
 
-        assert 'hx-trigger="every 15s"' in response.text
+        assert 'hx-trigger="every 15s [!document.hidden]"' in response.text
 
     async def test_the_row_partial_is_a_404_for_an_unknown_monitor(
         self, client: httpx.AsyncClient
@@ -843,3 +843,53 @@ class TestLatencyStats:
 
         assert "mean 7 days" in response.text
         assert "—" in response.text
+
+
+class TestPollingPause:
+    async def test_polling_stops_while_the_tab_is_hidden(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        """A background tab costs a query per monitor every 15s and tells nobody anything."""
+        await make_monitor(session, "web")
+
+        response = await client.get("/")
+
+        assert "[!document.hidden]" in response.text
+
+    async def test_the_swapped_row_keeps_the_condition(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        await make_monitor(session, "web")
+
+        response = await client.get("/partials/monitors/web/row")
+
+        assert "[!document.hidden]" in response.text
+
+
+class TestFilterPersistence:
+    async def test_the_choice_is_remembered(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        await make_monitor(session, "web")
+
+        response = await client.get("/")
+
+        assert "talaia-filter" in response.text
+
+
+class TestHeadRequests:
+    @pytest.mark.parametrize("path", ["/", "/incidents"])
+    async def test_html_routes_answer_head(self, client: httpx.AsyncClient, path: str) -> None:
+        """An uptime checker pointed at Talaia would otherwise get 405."""
+        response = await client.head(path)
+
+        assert response.status_code == 200
+
+    async def test_the_detail_page_answers_head(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        await make_monitor(session, "web")
+
+        response = await client.head("/monitors/web")
+
+        assert response.status_code == 200

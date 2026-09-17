@@ -29,6 +29,10 @@ POLL_SECONDS = 15
 CHART_WINDOWS = (1, 24, 168)
 INCIDENT_PAGE_LIMIT = 100
 
+# How far back the status strip looks. Forty segments at the longest sensible interval is
+# well inside this, and it stops the query ranking a whole month of retained results.
+STRIP_WINDOW = timedelta(days=2)
+
 
 def wants_html(request: Request) -> bool:
     """Whether a failure on this path should be rendered as a page rather than JSON.
@@ -71,7 +75,8 @@ async def not_found(request: Request, exc: StarletteHTTPException) -> HTMLRespon
     )
 
 
-@router.get("/", response_class=HTMLResponse)
+# HEAD as well as GET: an uptime checker pointed at Talaia would otherwise get 405.
+@router.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def dashboard(request: Request, session: SessionDep, user: AuthenticatedUser) -> HTMLResponse:
     """Render every active monitor, grouped, with its status strip."""
     groups, summary = await _dashboard_state(session)
@@ -97,8 +102,11 @@ async def summary_partial(request: Request, session: SessionDep) -> HTMLResponse
 async def monitor_row_partial(name: str, request: Request, session: SessionDep) -> HTMLResponse:
     """Re-render one dashboard row for HTMX, which swaps it in place."""
     monitor = await _require_monitor(session, name)
-    since = datetime.now(UTC) - timedelta(hours=UPTIME_WINDOW_HOURS)
-    results = await repo.list_latest_results_by_monitor(session, [monitor.id])
+    now = datetime.now(UTC)
+    since = now - timedelta(hours=UPTIME_WINDOW_HOURS)
+    results = await repo.list_latest_results_by_monitor(
+        session, [monitor.id], since=now - STRIP_WINDOW
+    )
     row = view.monitor_row(
         monitor,
         await repo.get_state(session, monitor.id),
@@ -112,7 +120,8 @@ async def monitor_row_partial(name: str, request: Request, session: SessionDep) 
     )
 
 
-@router.get("/incidents", response_class=HTMLResponse)
+# HEAD as well as GET: an uptime checker pointed at Talaia would otherwise get 405.
+@router.api_route("/incidents", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def incidents_page(
     request: Request,
     session: SessionDep,
@@ -137,7 +146,8 @@ async def incidents_page(
     )
 
 
-@router.get("/monitors/{name}", response_class=HTMLResponse)
+# HEAD as well as GET: an uptime checker pointed at Talaia would otherwise get 405.
+@router.api_route("/monitors/{name}", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def monitor_detail(
     name: str,
     request: Request,
@@ -151,7 +161,9 @@ async def monitor_detail(
     since = now - timedelta(hours=UPTIME_WINDOW_HOURS)
     today = now.date()
 
-    strip = await repo.list_latest_results_by_monitor(session, [monitor.id])
+    strip = await repo.list_latest_results_by_monitor(
+        session, [monitor.id], since=now - STRIP_WINDOW
+    )
     chart_results = await repo.list_check_results(
         session, monitor.id, since=now - timedelta(hours=hours)
     )
@@ -210,7 +222,9 @@ async def _dashboard_state(session: AsyncSession) -> tuple[tuple[view.Group, ...
     since = datetime.now(UTC) - timedelta(hours=UPTIME_WINDOW_HOURS)
 
     monitor_ids = [monitor.id for monitor, _ in pairs]
-    strips = await repo.list_latest_results_by_monitor(session, monitor_ids)
+    strips = await repo.list_latest_results_by_monitor(
+        session, monitor_ids, since=datetime.now(UTC) - STRIP_WINDOW
+    )
     ratios = await repo.uptime_ratios(session, since=since)
 
     rows = [

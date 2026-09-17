@@ -56,5 +56,36 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Dumps the database on a schedule. Shares the db image so pg_dump always matches the
+  # server version, and the socket never leaves the stack.
+  backup:
+    image: postgres:17-alpine
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_USER: ${POSTGRES_USER:-talaia}
+      POSTGRES_DB: ${POSTGRES_DB:-talaia}
+      TALAIA_BACKUP_KEEP_DAYS: ${TALAIA_BACKUP_KEEP_DAYS:-14}
+      TALAIA_BACKUP_EVERY_SECONDS: ${TALAIA_BACKUP_EVERY_SECONDS:-86400}
+    volumes:
+      - ./scripts/backup.sh:/usr/local/bin/backup.sh:ro
+      - ${TALAIA_BACKUP_DIR:-./backups}:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          /usr/local/bin/backup.sh || echo "talaia: backup failed"
+          sleep "$${TALAIA_BACKUP_EVERY_SECONDS}"
+        done
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   postgres-data:

@@ -91,6 +91,40 @@ It needs two things on the GitLab side:
 The job is `when: manual` deliberately. The pipeline says the image is good; a person says
 now is a good time.
 
+### Backups
+
+`incidents` and `daily_uptime` are the permanent record — everything else is either
+configuration that lives in git or raw results that get pruned. They sit in one Docker
+volume, so the stack runs a `backup` sidecar that dumps the database on a schedule:
+
+```sh
+TALAIA_BACKUP_DIR=./backups          # on the host
+TALAIA_BACKUP_KEEP_DAYS=14
+TALAIA_BACKUP_EVERY_SECONDS=86400
+```
+
+It shares the `postgres` image so `pg_dump` always matches the server version — a
+mismatched client is the usual way a dump turns out not to restore. Each dump is written to
+a `.partial` name and moved into place when complete, so an interrupted run is never
+mistaken for a good backup by whatever copies these off the host.
+
+**These are not an off-site backup.** They are on the same disk as the database they
+protect, which covers the case you are actually likely to hit — a bad migration, a wrong
+`DELETE`, a corrupted volume — and none of the cases where the machine is gone. Point
+whatever already backs up that host at the directory.
+
+Restoring:
+
+```sh
+docker compose -f compose.prod.yaml stop app
+gunzip -c backups/talaia-20260101T030000Z.sql.gz \
+  | docker compose -f compose.prod.yaml exec -T db psql -U talaia -d talaia
+docker compose -f compose.prod.yaml start app
+```
+
+Stop `app` first: the scheduler writes continuously, and restoring underneath it gives you
+a database that is half one thing and half another.
+
 ### Upgrading
 
 ```sh

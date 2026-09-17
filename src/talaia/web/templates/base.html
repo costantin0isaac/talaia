@@ -83,14 +83,30 @@
     (function () {
       var filters = document.querySelector(".filters");
       if (!filters) return;
+
+      function apply(value) {
+        document.body.dataset.filter = value;
+        filters.querySelectorAll(".filter").forEach(function (button) {
+          button.setAttribute("aria-pressed", String(button.dataset.filterValue === value));
+        });
+      }
+
+      try {
+        var saved = localStorage.getItem("talaia-filter");
+        if (saved) apply(saved);
+      } catch (error) {
+        // Private browsing can throw; the default filter still applies.
+      }
+
       filters.addEventListener("click", function (event) {
         var button = event.target.closest(".filter");
         if (!button) return;
-        var value = button.dataset.filterValue;
-        document.body.dataset.filter = value;
-        filters.querySelectorAll(".filter").forEach(function (other) {
-          other.setAttribute("aria-pressed", String(other === button));
-        });
+        apply(button.dataset.filterValue);
+        try {
+          localStorage.setItem("talaia-filter", button.dataset.filterValue);
+        } catch (error) {
+          // Not persisting is survivable; the filter still works for this page.
+        }
       });
     })();
 

@@ -400,3 +400,25 @@ class TestAverageLatencySinceDay:
         await self.rollup(session, theirs.id, day=date(2026, 3, 14), checks=10, latency=900)
 
         assert await repo.average_latency_since_day(session, mine.id, since=date(2026, 3, 1)) == 20
+
+
+class TestStripWindow:
+    async def test_results_outside_the_window_are_not_ranked(self, session: AsyncSession) -> None:
+        """The bound is what stops the window function scanning a whole month."""
+        monitor = await make_monitor(session, "web")
+        now = datetime.now(UTC)
+        for hours_ago in (1, 100):
+            await repo.record_check_result(
+                session,
+                monitor_id=monitor.id,
+                checked_at=now - timedelta(hours=hours_ago),
+                success=True,
+            )
+
+        bounded = await repo.list_latest_results_by_monitor(
+            session, [monitor.id], since=now - timedelta(days=2)
+        )
+        unbounded = await repo.list_latest_results_by_monitor(session, [monitor.id])
+
+        assert len(bounded[monitor.id]) == 1
+        assert len(unbounded[monitor.id]) == 2

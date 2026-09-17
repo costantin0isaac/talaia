@@ -42,6 +42,10 @@ async def current_user(request: Request, session: SessionDep) -> User | None:
     # Authentication closes its own transaction. Reading opens one too, and a route that
     # then opens its own with ``session.begin()`` would fail on the second request of a
     # session -- which is how POST /api/reload broke when the guard was added.
+    #
+    # Deliberately a commit even when nothing was written: rollback would be one round
+    # trip cheaper, but it also expires every object in the identity map, which turns a
+    # later attribute read into a lazy load outside the async context.
     await session.commit()
     return user
 

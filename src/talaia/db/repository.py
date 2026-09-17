@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Literal, cast
 
-from sqlalchemy import CursorResult, delete, func, or_, select, update
+from sqlalchemy import ColumnElement, CursorResult, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, aliased
@@ -130,15 +130,27 @@ async def list_check_results(
 
 
 async def list_latest_results_by_monitor(
-    session: AsyncSession, monitor_ids: Sequence[int], *, limit: int = 40
+    session: AsyncSession,
+    monitor_ids: Sequence[int],
+    *,
+    limit: int = 40,
+    since: datetime | None = None,
 ) -> dict[int, list[CheckResult]]:
     """Return the newest ``limit`` results for each monitor, in one query.
 
     A window function rather than one query per monitor: the dashboard renders every
     monitor's strip at once, and the per-monitor form would not survive a long list.
+
+    ``since`` bounds how far back the ranking looks. PostgreSQL 15 and later can stop a
+    ``row_number() <= N`` scan early, so this is cheap without it -- but relying on that
+    optimisation for correctness of cost is not the same as asking for less data.
     """
     if not monitor_ids:
         return {}
+
+    window: list[ColumnElement[bool]] = [CheckResult.monitor_id.in_(monitor_ids)]
+    if since is not None:
+        window.append(CheckResult.checked_at >= since)
 
     ranked = (
         select(
@@ -150,7 +162,7 @@ async def list_latest_results_by_monitor(
             )
             .label("position"),
         )
-        .where(CheckResult.monitor_id.in_(monitor_ids))
+        .where(*window)
         .subquery()
     )
     result = aliased(CheckResult, ranked)

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from talaia.api.dependencies import get_session
 from talaia.auth.passwords import hash_password, needs_rehash, verify_password
+from talaia.auth.throttle import LoginThrottle
 from talaia.auth.tokens import hash_token, new_token
 from talaia.db import repository as repo
 from talaia.logging import get_logger
@@ -30,6 +31,16 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 DUMMY_HASH = hash_password("a password that is never anyone's")
 
 INVALID_CREDENTIALS = "Wrong username or password."
+
+
+def client_address(request: Request) -> str:
+    """Identify the caller for throttling purposes.
+
+    With a reverse proxy on another host this is only the real client when
+    ``TALAIA_PROXY_IPS`` names that proxy; otherwise every attempt shares one bucket and
+    the lockout is effectively global.
+    """
+    return request.client.host if request.client else "unknown"
 
 
 def safe_next(target: str | None) -> str:
@@ -63,14 +74,37 @@ async def login(
 ) -> Response:
     """Check credentials and, if they are good, start a session."""
     settings: Settings = request.app.state.settings
+    throttle: LoginThrottle = request.app.state.login_throttle
     destination = safe_next(next_path)
+    client = client_address(request)
+
+    decision = throttle.check(client)
+    if not decision.allowed:
+        log.warning(
+            "login refused by rate limit",
+            client=client,
+            username=username,
+            retry_after=decision.retry_after,
+        )
+        refused = templates.TemplateResponse(
+            request,
+            "login.html",
+            {
+                "next": destination,
+                "error": f"Too many attempts. Try again in {decision.retry_after}s.",
+            },
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+        refused.headers["Retry-After"] = str(decision.retry_after)
+        return refused
 
     user = await repo.get_user_by_name(session, username)
     stored_hash = user.password_hash if user is not None else DUMMY_HASH
     matched = verify_password(stored_hash, password)
 
     if user is None or not user.active or not matched:
-        log.warning("failed login", username=username)
+        throttle.record_failure(client)
+        log.warning("failed login", username=username, client=client)
         return templates.TemplateResponse(
             request,
             "login.html",
@@ -78,6 +112,7 @@ async def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
 
+    throttle.record_success(client)
     now = datetime.now(UTC)
     token = new_token()
     await repo.create_session(

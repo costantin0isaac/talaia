@@ -158,6 +158,31 @@ mean.
 `TALAIA_SESSION_COOKIE_SECURE` still exists as an explicit override for the case where the
 public URL and the URL you actually use disagree. Leave it unset otherwise.
 
+### Repeated failed logins are slowed down
+
+argon2 makes each password guess cost about 50 ms. That is a speed bump, not a wall: left
+alone, someone on the LAN could still try a thousand passwords an hour. So failures are
+counted per client address, and once the budget is spent attempts are refused outright:
+
+```sh
+TALAIA_LOGIN_MAX_ATTEMPTS=5          # failures before the first lockout
+TALAIA_LOGIN_LOCKOUT_SECONDS=60      # doubles with each further failure
+TALAIA_LOGIN_MAX_LOCKOUT_SECONDS=900 # ceiling, so a bad afternoon is not a bad week
+```
+
+A refused attempt returns `429` with a `Retry-After` header and a page saying how long to
+wait. A successful login clears the count, so mistyping twice and then getting it right
+leaves no trace.
+
+The count is held in memory and lost on restart. That is deliberate — a table would turn
+every login attempt into a database write, which is precisely the amplification an attacker
+would want.
+
+Two limits worth knowing. Guesses spread across many addresses are not slowed; defending
+that needs something that can see the whole network. And the address is only the real client
+if `TALAIA_PROXY_IPS` names your reverse proxy — otherwise every attempt shares one bucket
+and a single attacker locks out everyone.
+
 ### Behind a reverse proxy on another host
 
 uvicorn only trusts `X-Forwarded-For` and `X-Forwarded-Proto` from `127.0.0.1`. If the

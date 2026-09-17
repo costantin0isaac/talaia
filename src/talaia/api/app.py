@@ -14,6 +14,7 @@ from talaia.api.routes_api import public_router, router
 from talaia.api.routes_auth import router as auth_router
 from talaia.api.routes_web import not_found, unauthenticated, wants_html
 from talaia.api.routes_web import router as web_router
+from talaia.auth.throttle import LoginThrottle
 from talaia.checks.http import HttpClients
 from talaia.checks.registry import build_registry
 from talaia.config.loader import ConfigError
@@ -119,6 +120,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = resolved
+    app.state.login_throttle = LoginThrottle(
+        max_attempts=resolved.login_max_attempts,
+        lockout_seconds=resolved.login_lockout_seconds,
+        max_lockout_seconds=resolved.login_max_lockout_seconds,
+    )
     app.state.metrics = Metrics(version=__version__, commit=resolved.commit)
     app.mount("/static", CachedStaticFiles(directory=STATIC_DIR), name="static")
 

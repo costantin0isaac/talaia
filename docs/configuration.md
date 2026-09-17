@@ -158,6 +158,21 @@ mean.
 `TALAIA_SESSION_COOKIE_SECURE` still exists as an explicit override for the case where the
 public URL and the URL you actually use disagree. Leave it unset otherwise.
 
+### Times are shown in one timezone of your choosing
+
+Everything is stored in UTC and always will be. What it is *rendered* as is a setting:
+
+```sh
+TALAIA_TIMEZONE=Europe/Madrid
+```
+
+That applies to the dashboard, the latency chart axis, the incident tables, the phone
+notifications and the CLI, and every rendered time names its zone — `CET` or `CEST` rather
+than a bare clock you have to guess at. Unset, everything reads `UTC`.
+
+An unrecognised name stops the application at startup rather than quietly rendering the
+wrong thing forever.
+
 ### Repeated failed logins are slowed down
 
 argon2 makes each password guess cost about 50 ms. That is a speed bump, not a wall: left

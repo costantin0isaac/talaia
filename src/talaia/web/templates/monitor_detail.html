@@ -65,7 +65,7 @@
     <text class="chart-axis-label" x="{{ detail.chart.plot_left - 8 }}"
           y="{{ detail.chart.plot_top - 2 }}">ms</text>
     <text class="chart-axis-label chart-axis-label-x" x="{{ detail.chart.plot_right }}"
-          y="{{ detail.chart.height - 4 }}">UTC</text>
+          y="{{ detail.chart.height - 4 }}">{{ detail.chart.timezone }}</text>
 
     <line class="chart-axis" x1="{{ detail.chart.plot_left }}" y1="{{ detail.chart.plot_bottom }}"
           x2="{{ detail.chart.plot_right }}" y2="{{ detail.chart.plot_bottom }}"></line>

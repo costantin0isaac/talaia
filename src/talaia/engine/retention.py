@@ -44,7 +44,8 @@ class RetentionTask:
     """Refreshes daily rollups and prunes raw results, once per hour.
 
     Rollups are written before pruning, so a short retention window cannot delete the
-    results a rollup is about to summarise.
+    results a rollup is about to summarise. Days that were missed while the process was
+    down are backfilled on the next pass, as long as their results are still retained.
     """
 
     def __init__(
@@ -83,9 +84,19 @@ class RetentionTask:
             self._task = None
 
     async def run_once(self) -> MaintenanceReport:
-        """Refresh rollups for yesterday and today, then prune old results."""
+        """Refresh every rollup that needs it, then prune old results."""
         now = self._clock()
-        days = (now.date() - timedelta(days=1), now.date())
+        today = now.date()
+        window_start = (now - timedelta(days=self._retention_days)).date()
+
+        async with self._session_factory() as session:
+            missing = await repo.days_missing_rollups(session, since=window_start, until=today)
+
+        # Yesterday and today are refreshed unconditionally: today is still accumulating,
+        # and a check that straddles midnight lands after yesterday's last pass. Anything
+        # else missing is a day Talaia was not running to roll up, so it is backfilled --
+        # but only inside the retention window, since older results are about to go.
+        days = tuple(sorted({today - timedelta(days=1), today, *missing}))
 
         rows_written = 0
         for day in days:

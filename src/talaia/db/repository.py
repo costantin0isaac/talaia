@@ -4,7 +4,7 @@ Services call these functions; they never build SQL themselves.
 """
 
 from collections.abc import Sequence
-from datetime import date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Literal, cast
 
 from sqlalchemy import CursorResult, delete, func, or_, select, update
@@ -336,6 +336,29 @@ async def aggregate_check_results(
         (monitor_id, total, successful, round(average) if average is not None else None)
         for monitor_id, total, successful, average in rows
     ]
+
+
+async def days_missing_rollups(session: AsyncSession, *, since: date, until: date) -> list[date]:
+    """Return the UTC days in ``[since, until]`` that hold results but lack a rollup.
+
+    A day counts as missing if any one monitor with results on it has no ``daily_uptime``
+    row, which is what every day looks like after a stretch of Talaia not running.
+    """
+    day = func.date(func.timezone("UTC", CheckResult.checked_at))
+    start = datetime.combine(since, time.min, tzinfo=UTC)
+    end = datetime.combine(until + timedelta(days=1), time.min, tzinfo=UTC)
+    has_rollup = (
+        select(DailyUptime.monitor_id)
+        .where(DailyUptime.monitor_id == CheckResult.monitor_id, DailyUptime.day == day)
+        .exists()
+    )
+    statement = (
+        select(day.label("day"))
+        .where(CheckResult.checked_at >= start, CheckResult.checked_at < end, ~has_rollup)
+        .group_by(day)
+        .order_by(day)
+    )
+    return [row.day for row in (await session.execute(statement)).all()]
 
 
 async def upsert_daily_uptime(

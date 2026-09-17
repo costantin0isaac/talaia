@@ -46,6 +46,8 @@ class TlsChecker:
 
     def __init__(self, *, clock: Clock = None) -> None:
         self._now = clock or _utc_now
+        # Building a context reads the system CA bundle from disk; once is enough.
+        self._context = ssl.create_default_context()
 
     async def check(self, monitor: MonitorConfig) -> CheckOutcome:
         """Complete a TLS handshake and measure the certificate's remaining validity."""
@@ -61,7 +63,7 @@ class TlsChecker:
                 _, writer = await asyncio.open_connection(
                     host,
                     port,
-                    ssl=ssl.create_default_context(),
+                    ssl=self._context,
                     server_hostname=options.server_name or host,
                 )
             latency_ms = int((time.perf_counter() - start) * 1000)

@@ -8,7 +8,7 @@ from talaia.checks.base import CheckOutcome
 from talaia.checks.registry import CheckerRegistry
 from talaia.config.schema import HttpOptions, MonitorConfig, MonitorType
 from talaia.db.models import Monitor
-from talaia.engine.scheduler import SyncPlan, plan_sync, to_monitor_config
+from talaia.engine.scheduler import FailureStreak, SyncPlan, plan_sync, to_monitor_config
 
 
 def config(name: str, *, interval: int = 60, target: str = "http://10.0.0.1") -> MonitorConfig:
@@ -181,3 +181,30 @@ class TestToMonitorConfig:
         )
 
         assert to_monitor_config(row).http is None
+
+
+class TestFailureStreak:
+    def test_the_first_failure_is_the_one_worth_a_traceback(self) -> None:
+        streak = FailureStreak()
+
+        assert streak.record_failure() is True
+        assert streak.record_failure() is False
+        assert streak.record_failure() is False
+        assert streak.count == 3
+
+    def test_a_success_after_failures_is_a_recovery(self) -> None:
+        streak = FailureStreak()
+        streak.record_failure()
+
+        assert streak.record_success() is True
+        assert streak.count == 0
+
+    def test_a_success_with_no_streak_is_just_a_success(self) -> None:
+        assert FailureStreak().record_success() is False
+
+    def test_a_new_streak_gets_its_own_traceback(self) -> None:
+        streak = FailureStreak()
+        streak.record_failure()
+        streak.record_success()
+
+        assert streak.record_failure() is True

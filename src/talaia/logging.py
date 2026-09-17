@@ -17,6 +17,28 @@ _THIRD_PARTY_LOGGERS = (
 )
 
 
+# Requests that arrive constantly by design and say nothing when they succeed: the
+# container healthcheck, Prometheus, the dashboard's per-row polling, and assets.
+QUIET_PATH_PREFIXES = ("/healthz", "/readyz", "/metrics", "/partials/", "/static/")
+
+
+class QuietAccessLog(logging.Filter):
+    """Drop uvicorn access lines for routine, high-frequency, uninteresting requests.
+
+    Failures are always kept: a 500 on /readyz is exactly the kind of thing the log is for.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Return False to drop the record."""
+        args = record.args
+        if not isinstance(args, tuple) or len(args) != 5:
+            return True
+        path, status_code = str(args[2]), args[4]
+        if isinstance(status_code, int) and status_code >= 400:
+            return True
+        return not path.startswith(QUIET_PATH_PREFIXES)
+
+
 def configure_logging(level: LogLevel = "INFO", log_format: LogFormat = "json") -> None:
     """Configure structlog and the standard library logging module.
 
@@ -73,6 +95,9 @@ def configure_logging(level: LogLevel = "INFO", log_format: LogFormat = "json") 
         third_party = logging.getLogger(name)
         third_party.handlers = []
         third_party.propagate = True
+
+    access = logging.getLogger("uvicorn.access")
+    access.filters = [QuietAccessLog()]
 
 
 def get_logger(name: str) -> structlog.stdlib.BoundLogger:

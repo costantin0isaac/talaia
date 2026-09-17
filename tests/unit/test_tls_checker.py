@@ -263,3 +263,28 @@ class TestVerification:
 
         assert outcome.success is False
         assert outcome.error == "the server presented no certificate"
+
+
+class TestContextReuse:
+    async def test_the_ssl_context_is_built_once_per_checker(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        """Each build re-reads the CA bundle from disk; per check that is pure waste."""
+        calls = 0
+        real = ssl.create_default_context
+
+        def counting(*args: object, **kwargs: object) -> ssl.SSLContext:
+            nonlocal calls
+            calls += 1
+            return real()
+
+        monkeypatch.setattr(ssl, "create_default_context", counting)
+
+        async def refuse(*args: object, **kwargs: object) -> tuple[object, object]:
+            raise ConnectionRefusedError
+
+        monkeypatch.setattr(asyncio, "open_connection", refuse)
+
+        checker = TlsChecker()
+        await checker.check(monitor())
+        await checker.check(monitor())
+
+        assert calls == 1

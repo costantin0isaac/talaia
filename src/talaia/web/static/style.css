@@ -79,6 +79,9 @@ body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 15px;
   line-height: 1.5;
+  /* Stop iOS inflating text in the stacked mobile layout. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 a { color: var(--accent); text-decoration: none; }
@@ -258,15 +261,6 @@ code { font-family: var(--mono); font-size: 0.9em; }
 .incidents tr:last-child td { border-bottom: none; }
 .incidents .ongoing td { color: var(--down); }
 
-/* Narrow screens ---------------------------------------------------------- */
-
-@media (max-width: 720px) {
-  .page { padding: 16px; }
-  .cell-target, .monitors thead .cell-target { display: none; }
-  .cell-strip { width: auto; }
-  .segment { width: 2px; }
-}
-
 /* Login ------------------------------------------------------------------- */
 
 .login { max-width: 340px; margin: 48px auto; }
@@ -376,3 +370,99 @@ body[data-filter="paused"]:not(:has(.monitor-row[data-status="paused"])) .filter
 }
 
 .strip-span { display: block; margin-top: 8px; }
+
+/* Narrow screens ----------------------------------------------------------- */
+/* Last in the file on purpose: these are overrides, and at equal specificity the later
+   rule wins. Sitting mid-file, they lost to everything declared after them. */
+
+@media (max-width: 720px) {
+  .page { padding: 16px 14px 32px; }
+
+  /* Masthead wraps onto two lines rather than squeezing or overflowing. */
+  .masthead { flex-wrap: wrap; gap: 10px; padding: 12px 14px; }
+  .masthead-links {
+    width: 100%; flex-wrap: wrap; gap: 10px; align-items: center;
+  }
+  .masthead-user { font-size: 0.9em; }
+
+  /* Two columns of stats beat a ragged wrap. */
+  .summary, .uptimes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .stat { padding: 10px 8px; }
+  .stat-value { font-size: 1.25em; }
+  .stat-label { font-size: 0.72em; }
+
+  /* Tables cannot wrap, and these carry five columns of timestamps. Each row becomes a
+     card instead, with the hidden column headers reinstated as labels on the values. */
+  .monitors, .monitors tbody, .monitors tr, .monitors td,
+  .incidents, .incidents tbody, .incidents tr, .incidents td { display: block; width: 100%; }
+  .monitors thead, .incidents thead { display: none; }
+
+  .monitor-row {
+    position: relative;
+    margin-bottom: 8px; padding: 10px 12px 10px 30px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--bg-raised);
+  }
+  .monitor-row > td { border: none; padding: 0; }
+  .monitor-row:hover > td { background: none; }
+
+  .cell-status { position: absolute; left: 12px; top: 14px; width: auto; }
+  .cell-name { font-size: 1.02em; }
+  .cell-target { display: none; }
+
+  .cell-latency, .cell-uptime {
+    display: inline-block; width: auto; margin: 4px 14px 0 0;
+    color: var(--text-muted); font-size: 0.85em;
+  }
+  .cell-latency::before, .cell-uptime::before {
+    content: attr(data-label) " "; color: var(--text-muted); opacity: 0.75;
+  }
+
+  /* The strip spans the card instead of sitting at a fixed 190px. */
+  .cell-strip { width: auto; margin-top: 8px; }
+  .cell-strip .strip { display: flex; width: 100%; }
+  .segment { width: auto; flex: 1 1 0; min-width: 1px; height: 16px; }
+
+  .incidents tr {
+    margin-bottom: 8px; padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--bg-raised);
+  }
+  .incidents tr:last-child td { border-bottom: none; }
+  .incidents td { border: none; padding: 2px 0; font-size: 0.9em; }
+  .incidents td::before {
+    content: attr(data-label) ": "; color: var(--text-muted);
+  }
+
+  /* Rows are cards now, so a panel with no heading is a box drawn around boxes. */
+  .panel:not(:has(h2)) {
+    padding: 0; border: none; background: none;
+  }
+
+  /* An SVG scales by its viewBox, so a fixed height letterboxes it and shrinks the
+     labels to nothing. Give it the aspect ratio and enlarge the type instead. */
+  .chart { height: auto; aspect-ratio: 720 / 220; }
+  .chart-tick { font-size: 15px; }
+  .chart-axis-label { font-size: 14px; }
+  .chart-point { r: 3; }
+
+  /* Comfortable tap targets. */
+  .filter, .windows a { padding: 7px 13px; font-size: 0.86em; }
+  .filters { gap: 8px; }
+  .masthead-links button { padding: 7px 11px; }
+
+  .group-name { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+  .group-summary { margin-left: 0; }
+
+  .config { grid-template-columns: 1fr; gap: 0 0; }
+  .config dt { margin-top: 8px; }
+
+  .detail-head h1 { font-size: 1.3em; flex-wrap: wrap; }
+  .error-hint { max-width: 100%; white-space: normal; }
+  .panel { padding: 14px 12px; }
+}
+
+@media (max-width: 340px) {
+  /* One column: below this two stats leave no room for "open incidents". */
+  .summary, .uptimes { grid-template-columns: 1fr; }
+}

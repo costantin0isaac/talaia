@@ -926,3 +926,85 @@ class TestChartWindowLabels:
 
         assert 'text-anchor="start"' in response.text
         assert 'text-anchor="end"' in response.text
+
+
+class TestMobileLayout:
+    async def test_the_viewport_is_declared(self, anonymous: httpx.AsyncClient) -> None:
+        """Without this a phone renders the page at desktop width and zooms out."""
+        response = await anonymous.get("/login")
+
+        assert 'name="viewport"' in response.text
+        assert "width=device-width" in response.text
+
+    async def test_monitor_rows_label_their_values(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        """The stacked layout hides the column headers, so the cells carry them instead."""
+        await make_monitor(session, "web")
+
+        response = await client.get("/")
+
+        assert 'data-label="latency"' in response.text
+        assert 'data-label="24h"' in response.text
+
+    async def test_the_row_partial_keeps_its_labels(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        """A row swapped in by HTMX must not lose them."""
+        await make_monitor(session, "web")
+
+        response = await client.get("/partials/monitors/web/row")
+
+        assert 'data-label="latency"' in response.text
+
+    async def test_incident_rows_label_their_values(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        monitor = await make_monitor(session, "web")
+        await repo.open_incident(session, monitor_id=monitor.id, started_at=NOW, cause="timeout")
+        await session.flush()
+
+        detail = await client.get("/monitors/web")
+        listing = await client.get("/incidents")
+
+        for label in ('data-label="Started"', 'data-label="Duration"', 'data-label="Cause"'):
+            assert label in detail.text
+            assert label in listing.text
+        assert 'data-label="Monitor"' in listing.text
+
+
+class TestResponsiveStylesheet:
+    async def test_there_is_a_narrow_breakpoint(self, client: httpx.AsyncClient) -> None:
+        response = await client.get("/static/style.css")
+
+        assert "@media (max-width: 720px)" in response.text
+
+    async def test_the_responsive_rules_come_last(self, client: httpx.AsyncClient) -> None:
+        """At equal specificity the later rule wins, so overrides must not sit mid-file."""
+        text = (await client.get("/static/style.css")).text
+        narrow = text.index("@media (max-width: 720px)")
+
+        for selector in (".stat {", ".filter {", ".windows a {", ".chart {"):
+            assert text.index(selector) < narrow, f"{selector} is declared after the overrides"
+
+    async def test_tables_become_cards_on_a_phone(self, client: httpx.AsyncClient) -> None:
+        """Five columns of timestamps cannot fit; the rows stack instead."""
+        text = (await client.get("/static/style.css")).text
+        narrow = text[text.index("@media (max-width: 720px)") :]
+
+        assert ".monitors thead, .incidents thead { display: none; }" in narrow
+        assert "content: attr(data-label)" in narrow
+
+    async def test_the_chart_keeps_its_aspect_ratio(self, client: httpx.AsyncClient) -> None:
+        """A fixed height letterboxes the viewBox and shrinks the labels to nothing."""
+        text = (await client.get("/static/style.css")).text
+        narrow = text[text.index("@media (max-width: 720px)") :]
+
+        assert "aspect-ratio: 720 / 220" in narrow
+
+    async def test_stats_stay_two_wide_on_a_normal_phone(self, client: httpx.AsyncClient) -> None:
+        """A 390px screen is the common case; one stat per row there is six screens of scrolling."""
+        text = (await client.get("/static/style.css")).text
+        widths = [int(w) for w in re.findall(r"@media \(max-width: (\d+)px\)", text)]
+
+        assert min(widths) < 390

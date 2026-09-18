@@ -71,8 +71,15 @@ def exported() -> set[str]:
     return exported_metric_names()
 
 
+def query_panels(dashboard: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every panel that draws something. Rows are containers, with no query of their own."""
+    return [panel for panel in dashboard["panels"] if panel["type"] != "row"]
+
+
 def dashboard_expressions(dashboard: dict[str, Any]) -> list[str]:
-    return [target["expr"] for panel in dashboard["panels"] for target in panel.get("targets", [])]
+    return [
+        target["expr"] for panel in query_panels(dashboard) for target in panel.get("targets", [])
+    ]
 
 
 def alert_rules(rules: dict[str, Any]) -> list[dict[str, Any]]:
@@ -91,7 +98,7 @@ class TestDashboardStructure:
         assert len(ids) == len(set(ids))
 
     def test_every_panel_has_a_query(self, dashboard: dict[str, Any]) -> None:
-        for panel in dashboard["panels"]:
+        for panel in query_panels(dashboard):
             assert panel.get("targets"), f"{panel['title']} has no targets"
             for target in panel["targets"]:
                 assert target["expr"].strip()
@@ -115,7 +122,7 @@ class TestDashboardStructure:
 
     def test_the_datasource_is_a_variable(self, dashboard: dict[str, Any]) -> None:
         """A hard-coded datasource uid makes the dashboard unimportable elsewhere."""
-        for panel in dashboard["panels"]:
+        for panel in query_panels(dashboard):
             assert panel["datasource"]["uid"] == "${DS_PROMETHEUS}"
 
     def test_the_expected_variables_exist(self, dashboard: dict[str, Any]) -> None:
@@ -195,3 +202,81 @@ class TestAlertRules:
         threshold = int(re.search(r"<\s*(\d+)", warning["expr"]).group(1))  # type: ignore[union-attr]
 
         assert threshold > TlsOptions().warn_days
+
+
+class TestDashboardStructure2:
+    """The organisation of the redesign, rather than the mechanics of any one panel."""
+
+    def test_panels_are_grouped_under_rows(self, dashboard: dict[str, Any]) -> None:
+        titles = [panel["title"] for panel in dashboard["panels"] if panel["type"] == "row"]
+
+        assert titles == ["Health", "Performance", "Reliability"]
+
+    def test_every_row_has_panels_beneath_it(self, dashboard: dict[str, Any]) -> None:
+        """A row with nothing under it renders as a stray header."""
+        rows = [p for p in dashboard["panels"] if p["type"] == "row"]
+        drawn = query_panels(dashboard)
+
+        for row in rows:
+            below = [p for p in drawn if p["gridPos"]["y"] > row["gridPos"]["y"]]
+            assert below, f"row {row['title']!r} has nothing under it"
+
+    def test_talaia_watches_itself(self, dashboard: dict[str, Any]) -> None:
+        """Without this, a dead Talaia leaves every panel stale and looking healthy."""
+        expressions = " ".join(dashboard_expressions(dashboard))
+
+        assert 'up{job="talaia"}' in expressions
+        assert "rate(talaia_checks_total" in expressions
+
+    def test_the_liveness_panel_comes_first(self, dashboard: dict[str, Any]) -> None:
+        first = query_panels(dashboard)[0]
+
+        assert first["title"] == "Talaia"
+        assert first["gridPos"]["y"] == 1
+
+    def test_the_liveness_panel_reads_as_words(self, dashboard: dict[str, Any]) -> None:
+        """A bare 1 or 0 is the one thing nobody should have to interpret here."""
+        talaia = next(p for p in query_panels(dashboard) if p["title"] == "Talaia")
+        mappings = talaia["fieldConfig"]["defaults"]["mappings"][0]["options"]
+
+        assert mappings["0"]["text"] == "DOWN"
+        assert mappings["1"]["text"] == "Up"
+
+    def test_the_stalled_scheduler_shows_red_at_zero(self, dashboard: dict[str, Any]) -> None:
+        checking = next(p for p in query_panels(dashboard) if p["title"] == "Checking")
+        steps = checking["fieldConfig"]["defaults"]["thresholds"]["steps"]
+
+        assert steps[0]["color"] == "red"
+        assert steps[0]["value"] is None
+
+    def test_every_panel_explains_itself_or_is_self_evident(
+        self, dashboard: dict[str, Any]
+    ) -> None:
+        """Anything whose meaning is subtle carries a description; counts do not need one."""
+        obvious = {"Down", "Unknown", "Paused", "Version"}
+
+        for panel in query_panels(dashboard):
+            if panel["title"] in obvious:
+                continue
+            assert panel.get("description"), f"{panel['title']} has no description"
+
+    def test_the_availability_table_sorts_worst_first(self, dashboard: dict[str, Any]) -> None:
+        table = next(p for p in query_panels(dashboard) if p["type"] == "table")
+        sort = next(t for t in table["transformations"] if t["id"] == "sortBy")
+
+        assert sort["options"]["sort"][0]["field"] == "Availability"
+        assert sort["options"]["sort"][0]["desc"] is False
+
+    def test_the_availability_table_renames_its_columns(self, dashboard: dict[str, Any]) -> None:
+        """Raw Prometheus column names are unreadable in a table."""
+        table = next(p for p in query_panels(dashboard) if p["type"] == "table")
+        organize = next(t for t in table["transformations"] if t["id"] == "organize")
+
+        assert organize["options"]["renameByName"]["Value"] == "Availability"
+        assert organize["options"]["excludeByName"]["Time"] is True
+
+    def test_instant_panels_do_not_ask_for_a_range(self, dashboard: dict[str, Any]) -> None:
+        """A snapshot panel querying a range makes Prometheus do needless work."""
+        for panel in query_panels(dashboard):
+            for target in panel["targets"]:
+                assert target["instant"] != target["range"]

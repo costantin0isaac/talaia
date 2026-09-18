@@ -296,6 +296,23 @@ Import the dashboard through **Dashboards → New → Import → Upload JSON**. 
 Prometheus datasource rather than hard-coding one, and has `group` and `monitor` variables
 for filtering. Nothing else needs configuring.
 
+It is laid out as the questions get asked, in three sections:
+
+| Section | Answers |
+|---|---|
+| **Health** | Is Talaia itself up and still checking? How many monitors are down? What happened over the period? |
+| **Performance** | What is slow, what is flapping, and is the check rate steady? |
+| **Reliability** | Which monitors are least reliable, and what expires soonest? |
+
+The first two panels are the ones to look at before believing any of the others. **Talaia**
+is `up{job="talaia"}` — if that reads DOWN, every other panel is showing stale data and no
+monitor is being checked. **Checking** is the completed-check rate: a non-zero number there
+proves the scheduler is alive, and zero while Talaia is up is the silent failure that
+`/healthz` cannot see.
+
+Note that **Talaia** depends on the scrape job being named exactly `talaia`, which is also
+what the alerting rules match on.
+
 Check the rules before reloading Prometheus, the same way CI does:
 
 ```sh

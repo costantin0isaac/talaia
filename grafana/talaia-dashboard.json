@@ -10,7 +10,7 @@
   "editable": true,
   "graphTooltip": 1,
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "30s",
   "time": {
     "from": "now-24h",
@@ -24,8 +24,21 @@
   "panels": [
     {
       "id": 1,
+      "type": "row",
+      "title": "Health",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
       "type": "stat",
-      "title": "Up",
+      "title": "Talaia",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -34,7 +47,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 0
+        "y": 1
       },
       "targets": [
         {
@@ -43,10 +56,11 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "talaia_monitors_total{status=\"up\"}",
-          "legendFormat": "Up",
+          "expr": "up{job=\"talaia\"}",
+          "legendFormat": "talaia",
           "range": false,
           "instant": true,
+          "format": "time_series",
           "refId": "A"
         }
       ],
@@ -65,27 +79,45 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "fixedColor": "green",
-            "mode": "fixed"
-          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Up",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "noValue": "No data",
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "red",
                 "value": null
               }
             ]
+          },
+          "color": {
+            "mode": "thresholds"
           }
         },
         "overrides": []
-      }
+      },
+      "description": "Whether Prometheus can reach Talaia at all. If this is DOWN every other panel here is stale, and no monitor is being checked -- read nothing else until it is up."
     },
     {
-      "id": 2,
+      "id": 3,
       "type": "stat",
-      "title": "Down",
+      "title": "Checking",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -94,7 +126,71 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 0
+        "y": 1
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(talaia_checks_total[$__rate_interval]))",
+          "legendFormat": "checks",
+          "range": false,
+          "instant": true,
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0.001
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Checks completing per second across every monitor. Zero while Talaia is up is the silent failure: it serves, /healthz passes, and nothing is ever checked again."
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Down",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 8,
+        "y": 1
       },
       "targets": [
         {
@@ -107,6 +203,7 @@
           "legendFormat": "Down",
           "range": false,
           "instant": true,
+          "format": "time_series",
           "refId": "A"
         }
       ],
@@ -143,7 +240,7 @@
       }
     },
     {
-      "id": 3,
+      "id": 5,
       "type": "stat",
       "title": "Unknown",
       "datasource": {
@@ -152,9 +249,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 0
+        "w": 3,
+        "x": 11,
+        "y": 1
       },
       "targets": [
         {
@@ -167,6 +264,7 @@
           "legendFormat": "Unknown",
           "range": false,
           "instant": true,
+          "format": "time_series",
           "refId": "A"
         }
       ],
@@ -203,7 +301,7 @@
       }
     },
     {
-      "id": 4,
+      "id": 6,
       "type": "stat",
       "title": "Paused",
       "datasource": {
@@ -212,9 +310,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 12,
-        "y": 0
+        "w": 3,
+        "x": 14,
+        "y": 1
       },
       "targets": [
         {
@@ -227,6 +325,7 @@
           "legendFormat": "Paused",
           "range": false,
           "instant": true,
+          "format": "time_series",
           "refId": "A"
         }
       ],
@@ -263,9 +362,9 @@
       }
     },
     {
-      "id": 5,
+      "id": 7,
       "type": "stat",
-      "title": "Availability over range",
+      "title": "Availability",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -273,8 +372,8 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 16,
-        "y": 0
+        "x": 17,
+        "y": 1
       },
       "targets": [
         {
@@ -287,6 +386,7 @@
           "legendFormat": "availability",
           "range": false,
           "instant": true,
+          "format": "time_series",
           "refId": "A"
         }
       ],
@@ -327,10 +427,10 @@
         },
         "overrides": []
       },
-      "description": "Mean of talaia_check_up across every selected monitor, over the dashboard's time range. Monitors that are unknown or paused export nothing and are excluded rather than counted as down."
+      "description": "Mean of talaia_check_up across the selected monitors over the dashboard's time range. Monitors that are unknown or paused export nothing and are excluded, rather than counted as down."
     },
     {
-      "id": 6,
+      "id": 8,
       "type": "stat",
       "title": "Version",
       "datasource": {
@@ -339,9 +439,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 20,
-        "y": 0
+        "w": 3,
+        "x": 21,
+        "y": 1
       },
       "targets": [
         {
@@ -354,6 +454,7 @@
           "legendFormat": "{{version}}",
           "range": false,
           "instant": true,
+          "format": "time_series",
           "refId": "A"
         }
       ],
@@ -376,7 +477,7 @@
       }
     },
     {
-      "id": 7,
+      "id": 9,
       "type": "state-timeline",
       "title": "Monitor state",
       "datasource": {
@@ -384,10 +485,10 @@
         "uid": "${DS_PROMETHEUS}"
       },
       "gridPos": {
-        "h": 9,
+        "h": 10,
         "w": 24,
         "x": 0,
-        "y": 4
+        "y": 5
       },
       "targets": [
         {
@@ -400,6 +501,7 @@
           "legendFormat": "{{monitor}}",
           "range": true,
           "instant": false,
+          "format": "time_series",
           "refId": "A"
         }
       ],
@@ -456,18 +558,31 @@
       "description": "Gaps are not outages: talaia_check_up is absent while a monitor is unknown or paused, which is deliberately different from reporting zero."
     },
     {
-      "id": 8,
+      "id": 10,
+      "type": "row",
+      "title": "Performance",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 15
+      },
+      "panels": []
+    },
+    {
+      "id": 11,
       "type": "timeseries",
-      "title": "Check latency",
+      "title": "Latency",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
+        "h": 9,
+        "w": 16,
         "x": 0,
-        "y": 13
+        "y": 16
       },
       "targets": [
         {
@@ -480,15 +595,20 @@
           "legendFormat": "{{monitor}}",
           "range": true,
           "instant": false,
+          "format": "time_series",
           "refId": "A"
         }
       ],
       "options": {
         "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
+          "displayMode": "table",
+          "placement": "right",
           "showLegend": true,
-          "calcs": []
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
         },
         "tooltip": {
           "mode": "multi",
@@ -506,10 +626,85 @@
           }
         },
         "overrides": []
-      }
+      },
+      "description": "Latency of the most recent check, per monitor. Use the legend to isolate one."
     },
     {
-      "id": 9,
+      "id": 12,
+      "type": "bargauge",
+      "title": "Slowest right now",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 16
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "topk(10, talaia_check_duration_seconds{group=~\"$group\",monitor=~\"$monitor\"})",
+          "legendFormat": "{{monitor}}",
+          "range": false,
+          "instant": true,
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true,
+        "minVizHeight": 14,
+        "minVizWidth": 8,
+        "valueMode": "color",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "The ten slowest monitors on their most recent check."
+    },
+    {
+      "id": 13,
       "type": "timeseries",
       "title": "Checks per second",
       "datasource": {
@@ -519,8 +714,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 13
+        "x": 0,
+        "y": 25
       },
       "targets": [
         {
@@ -533,6 +728,7 @@
           "legendFormat": "{{result}}",
           "range": true,
           "instant": false,
+          "format": "time_series",
           "refId": "A"
         }
       ],
@@ -550,22 +746,53 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "reqps",
+          "unit": "cps",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
-            "fillOpacity": 10,
+            "fillOpacity": 12,
             "showPoints": "never"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "success"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "failure"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
       },
       "description": "talaia_checks_total is an in-process counter, so it resets on restart. rate() handles that; a raw increase across a restart would not."
     },
     {
-      "id": 10,
-      "type": "bargauge",
-      "title": "Certificate days remaining",
+      "id": 14,
+      "type": "timeseries",
+      "title": "Consecutive failures",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -573,8 +800,213 @@
       "gridPos": {
         "h": 8,
         "w": 12,
+        "x": 12,
+        "y": 25
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "talaia_monitor_consecutive_failures{monitor=~\"$monitor\"}",
+          "legendFormat": "{{monitor}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "lineInterpolation": "stepAfter"
+          }
+        },
+        "overrides": []
+      },
+      "description": "Rises to failure_threshold and then triggers a transition. A sawtooth that never reaches the threshold is a flapping target that no incident and no notification will ever mention."
+    },
+    {
+      "id": 15,
+      "type": "row",
+      "title": "Reliability",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
         "x": 0,
-        "y": 21
+        "y": 33
+      },
+      "panels": []
+    },
+    {
+      "id": 16,
+      "type": "table",
+      "title": "Least reliable, over the selected range",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 34
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "avg_over_time(talaia_check_up{group=~\"$group\",monitor=~\"$monitor\"}[$__range])",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Availability"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.99
+                    },
+                    {
+                      "color": "green",
+                      "value": 0.999
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
+          }
+        ]
+      },
+      "description": "Sorted worst first. A table rather than bars because at these numbers every bar looks full: 99.9% and 99.0% are a pixel apart, and the difference is nine hours a year.",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true
+            },
+            "renameByName": {
+              "monitor": "Monitor",
+              "group": "Group",
+              "type": "Type",
+              "Value": "Availability"
+            },
+            "indexByName": {}
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Availability",
+                "desc": false
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "bargauge",
+      "title": "Certificate days remaining",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 34
       },
       "targets": [
         {
@@ -587,6 +1019,7 @@
           "legendFormat": "{{monitor}}",
           "range": false,
           "instant": true,
+          "format": "time_series",
           "refId": "A"
         }
       ],
@@ -594,7 +1027,7 @@
         "displayMode": "gradient",
         "orientation": "horizontal",
         "showUnfilled": true,
-        "minVizHeight": 16,
+        "minVizHeight": 14,
         "minVizWidth": 8,
         "valueMode": "color",
         "reduceOptions": {
@@ -635,133 +1068,7 @@
         },
         "overrides": []
       },
-      "description": "Only tls monitors export this. Negative means the certificate has already expired. Talaia's own check fails below tls.warn_days, default 14."
-    },
-    {
-      "id": 11,
-      "type": "timeseries",
-      "title": "Consecutive failures",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 21
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
-          "expr": "talaia_monitor_consecutive_failures{monitor=~\"$monitor\"}",
-          "legendFormat": "{{monitor}}",
-          "range": true,
-          "instant": false,
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": []
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "decimals": 0,
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 0,
-            "showPoints": "never",
-            "lineInterpolation": "stepAfter"
-          }
-        },
-        "overrides": []
-      },
-      "description": "Rises to failure_threshold and then triggers a transition. A sawtooth that never reaches the threshold is a flapping target that never gets reported."
-    },
-    {
-      "id": 12,
-      "type": "bargauge",
-      "title": "Availability per monitor, last 7 days",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 29
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
-          "expr": "avg_over_time(talaia_check_up{group=~\"$group\",monitor=~\"$monitor\"}[7d])",
-          "legendFormat": "{{monitor}}",
-          "range": false,
-          "instant": true,
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "displayMode": "basic",
-        "orientation": "horizontal",
-        "showUnfilled": true,
-        "minVizHeight": 16,
-        "minVizWidth": 8,
-        "valueMode": "color",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "min": 0.9,
-          "max": 1,
-          "decimals": 3,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 0.99
-              },
-              {
-                "color": "green",
-                "value": 0.999
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
+      "description": "Only tls monitors export this. Negative means the certificate has already expired. Talaia's own check fails below tls.warn_days, default 14, so red here means a monitor that is already down."
     }
   ],
   "templating": {

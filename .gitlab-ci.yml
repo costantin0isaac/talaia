@@ -159,6 +159,18 @@ production:
     # A hard reset, never a pull: it is what guarantees the host matches the repository
     # even if someone edited a file in place. A tag pipeline deploys that exact tag.
     - git reset --hard "${CI_COMMIT_TAG:-origin/$CI_DEFAULT_BRANCH}"
+    # Deploy the image this pipeline built, rather than whatever TALAIA_TAG happens to say:
+    # a tag pinned in .env turns the deploy button into a no-op that redeploys an old
+    # release and looks green doing it. Written back to .env, not merely exported, so that
+    # a later `docker compose up -d` by hand agrees with what is running instead of
+    # silently rolling the host back to the pinned tag.
+    - |
+      tag="${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}"
+      tmp=$(mktemp "$PWD/.env.XXXXXX")
+      { grep -v '^TALAIA_TAG=' .env || true; echo "TALAIA_TAG=$tag"; } > "$tmp"
+      cat "$tmp" > .env   # not mv: .env keeps its owner and 0660 mode
+      rm -f "$tmp"
+      echo "talaia: deploying $tag"
     - docker login -u gitlab-ci-token -p "$CI_JOB_TOKEN" "$CI_REGISTRY"
     - docker compose -f compose.prod.yaml pull
     - docker compose -f compose.prod.yaml up -d

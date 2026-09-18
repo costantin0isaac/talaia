@@ -19,7 +19,7 @@ Fill in `.env`. The three that have no sensible default:
 
 ```sh
 TALAIA_IMAGE=<registry-host>/<namespace>/talaia   # no tag here
-TALAIA_TAG=latest
+TALAIA_TAG=latest                                 # the deploy job rewrites this
 POSTGRES_PASSWORD=<generate one>
 ```
 
@@ -200,8 +200,14 @@ docker compose -f compose.prod.yaml up -d
 `git reset --hard`, never `git pull`: a hard reset is what guarantees the server matches the
 repository. Never edit files on the server by hand — the next deploy discards them.
 
-To pin a release instead of tracking `main`, set `TALAIA_TAG=v1.0.0` in `.env`. Every commit
-also produces a `:$CI_COMMIT_SHORT_SHA` image, which is what you roll back to.
+`TALAIA_TAG` is not something you maintain by hand. The deploy job sets it to the image its
+own pipeline built — the git tag on a tag pipeline, the short SHA on `main` — and writes the
+value back into `.env`, so the file always names what is actually running. Editing it
+yourself only lasts until the next deploy.
+
+To roll back, press **Deploy** on the pipeline of the release you want. That is also why the
+job is manual: the button chooses the version, so there is always a person deciding which
+one production gets.
 
 ## Prometheus and Grafana
 

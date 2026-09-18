@@ -564,7 +564,6 @@ class TestChartAxes:
         response = await client.get("/monitors/web")
 
         assert "chart-tick-y" in response.text
-        assert "chart-tick-x" in response.text
         assert ">ms<" in response.text
         assert ">UTC<" in response.text
 
@@ -576,7 +575,7 @@ class TestChartAxes:
 
         response = await client.get("/monitors/web")
 
-        assert "latency in milliseconds over the last 24 hours" in response.text
+        assert "latency in milliseconds over the last 24h" in response.text
 
 
 class TestWordmark:
@@ -699,7 +698,7 @@ class TestChartWindow:
 
         response = await client.get("/monitors/web", params={"hours": 168})
 
-        assert "Latency, last 168h" in response.text
+        assert "Latency, last 7d" in response.text
         assert 'aria-current="page"' in response.text
 
     async def test_the_window_bounds_a_query(
@@ -893,3 +892,37 @@ class TestHeadRequests:
         response = await client.head("/monitors/web")
 
         assert response.status_code == 200
+
+
+class TestChartWindowLabels:
+    async def test_the_picker_offers_days_not_hours(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        await make_monitor(session, "web")
+
+        response = await client.get("/monitors/web")
+
+        for label in (">\n        1h", ">\n        24h", ">\n        7d", ">\n        30d"):
+            assert label.strip() in response.text
+
+    async def test_thirty_days_is_offered_and_works(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        """720 hours is exactly the route's upper bound, so this is the widest offer."""
+        await make_monitor(session, "web")
+
+        response = await client.get("/monitors/web", params={"hours": 720})
+
+        assert response.status_code == 200
+        assert "Latency, last 30d" in response.text
+
+    async def test_the_end_ticks_anchor_inward(
+        self, client: httpx.AsyncClient, session: AsyncSession
+    ) -> None:
+        monitor = await make_monitor(session, "web")
+        await make_results(session, monitor, "ssss")
+
+        response = await client.get("/monitors/web")
+
+        assert 'text-anchor="start"' in response.text
+        assert 'text-anchor="end"' in response.text

@@ -12,7 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from talaia.api.dependencies import AuthenticatedUser, get_session
 from talaia.db import repository as repo
 from talaia.db.models import Monitor, MonitorStatus
-from talaia.formatting import format_latency, format_percentage
+from talaia.formatting import format_latency, format_percentage, format_window
 from talaia.web import view
 from talaia.web.templates_env import templates
 
@@ -25,8 +25,9 @@ DETAIL_INCIDENTS = 20
 CHART_HOURS = 24
 POLL_SECONDS = 15
 
-# Offered on the detail page. The API already accepts 1-720; these are the useful ones.
-CHART_WINDOWS = (1, 24, 168)
+# Offered on the detail page. The API already accepts 1-720; these are the useful ones,
+# and 720 is exactly that upper bound.
+CHART_WINDOWS = (1, 24, 168, 720)
 INCIDENT_PAGE_LIMIT = 100
 
 # How far back the status strip looks. Forty segments at the longest sensible interval is
@@ -210,7 +211,8 @@ async def monitor_detail(
         {
             "detail": detail,
             "chart_hours": hours,
-            "chart_windows": CHART_WINDOWS,
+            "chart_window": format_window(hours),
+            "chart_windows": [(window, format_window(window)) for window in CHART_WINDOWS],
             "user": user,
         },
     )

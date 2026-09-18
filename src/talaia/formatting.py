@@ -86,3 +86,10 @@ def format_latency(latency_ms: int | None) -> str:
     if latency_ms is None:
         return "—"
     return f"{latency_ms} ms"
+
+
+def format_window(hours: int) -> str:
+    """Name a time window the way a person would say it: 1h, 24h, 7d, 30d."""
+    if hours < 2 * HOURS_PER_DAY or hours % HOURS_PER_DAY:
+        return f"{hours}h"
+    return f"{hours // HOURS_PER_DAY}d"

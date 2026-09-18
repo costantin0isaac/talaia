@@ -12,6 +12,7 @@ from talaia.formatting import (
     format_latency,
     format_percentage,
     format_timestamp,
+    format_window,
     set_display_timezone,
     timezone_label,
 )
@@ -113,3 +114,16 @@ class TestDisplayTimezone:
         tokyo = AT.astimezone(ZoneInfo("Asia/Tokyo"))
 
         assert format_timestamp(tokyo) == "2026-03-14 10:30:05 CET"
+
+
+class TestFormatWindow:
+    @pytest.mark.parametrize(
+        ("hours", "expected"),
+        [(1, "1h"), (6, "6h"), (24, "24h"), (47, "47h"), (48, "2d"), (168, "7d"), (720, "30d")],
+    )
+    def test_names_a_window_the_way_a_person_would(self, hours: int, expected: str) -> None:
+        assert format_window(hours) == expected
+
+    def test_an_odd_multiple_of_days_stays_in_hours(self) -> None:
+        """36 hours is not "1d"; saying so would round away half the window."""
+        assert format_window(36) == "36h"

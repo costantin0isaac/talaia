@@ -275,3 +275,60 @@ class TestChartAxes:
 
         assert chart.latency_ticks == ()
         assert chart.time_ticks == ()
+
+
+class TestAxisLabelClearance:
+    def test_the_unit_caption_clears_the_topmost_tick(self) -> None:
+        """They used to be two pixels apart in the same column, drawn over each other."""
+        chart = view.latency_chart([result(minutes_ago=0, latency_ms=50)])
+
+        highest = min(tick.position for tick in chart.latency_ticks)
+        assert highest - chart.unit_y >= 10
+
+    def test_the_timezone_caption_clears_the_clock_row(self) -> None:
+        chart = view.latency_chart([result(minutes_ago=0)])
+
+        assert chart.zone_y - chart.clock_y >= 12
+
+    def test_both_bottom_rows_fit_inside_the_viewbox(self) -> None:
+        chart = view.latency_chart([result(minutes_ago=0)])
+
+        assert chart.zone_y <= chart.height
+        assert chart.clock_y < chart.zone_y
+
+    def test_the_unit_caption_sits_above_the_plot(self) -> None:
+        chart = view.latency_chart([result(minutes_ago=0)])
+
+        assert 0 < chart.unit_y < chart.plot_top
+
+    def test_tick_labels_sit_left_of_the_axis(self) -> None:
+        chart = view.latency_chart([result(minutes_ago=0)])
+
+        assert chart.tick_x < chart.plot_left
+
+
+class TestTimeTickAnchors:
+    def test_the_outermost_ticks_point_inward(self) -> None:
+        """Centred on the plot edges they overhang the viewBox and lose a character."""
+        results = [result(minutes_ago=60), result(minutes_ago=30), result(minutes_ago=0)]
+
+        chart = view.latency_chart(results)
+
+        assert [tick.anchor for tick in chart.time_ticks] == ["start", "middle", "end"]
+
+    def test_a_single_reading_anchors_at_the_start(self) -> None:
+        chart = view.latency_chart([result(minutes_ago=0)])
+
+        assert chart.time_ticks[0].anchor == "start"
+
+    def test_no_label_is_centred_on_an_edge(self) -> None:
+        results = [result(minutes_ago=60), result(minutes_ago=30), result(minutes_ago=0)]
+
+        chart = view.latency_chart(results)
+
+        for tick in chart.time_ticks:
+            centred_on_edge = tick.anchor == "middle" and tick.position in (
+                chart.plot_left,
+                chart.plot_right,
+            )
+            assert not centred_on_edge

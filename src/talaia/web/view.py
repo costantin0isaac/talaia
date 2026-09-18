@@ -22,14 +22,23 @@ from talaia.formatting import (
 STRIP_SIZE = 40
 
 CHART_WIDTH = 720
-CHART_HEIGHT = 200
+CHART_HEIGHT = 220
 
 # Gutters for the axis labels. Left is wide enough for a four-digit millisecond value,
 # bottom for a HH:MM clock.
 CHART_LEFT = 52
 CHART_RIGHT = 12
-CHART_TOP = 12
-CHART_BOTTOM = 28
+
+# Top leaves a line above the plot for the "ms" caption; bottom leaves two, one for the
+# clock ticks and one for the timezone. Sharing a line is what used to overlap them.
+CHART_TOP = 26
+CHART_BOTTOM = 44
+
+# Offsets from the plot edges, so the template never does arithmetic.
+TICK_GAP = 8
+UNIT_GAP = 12
+CLOCK_ROW = 16
+ZONE_ROW = 32
 
 SegmentState = Literal["ok", "fail", "empty"]
 
@@ -107,6 +116,7 @@ class Tick:
 
     position: float
     label: str
+    anchor: str = "middle"
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +137,26 @@ class LatencyChart:
     plot_right: float = CHART_WIDTH - CHART_RIGHT
     plot_top: float = CHART_TOP
     plot_bottom: float = CHART_HEIGHT - CHART_BOTTOM
+
+    @property
+    def tick_x(self) -> float:
+        """Where latency tick labels end, just left of the axis."""
+        return self.plot_left - TICK_GAP
+
+    @property
+    def unit_y(self) -> float:
+        """Baseline for the millisecond caption, clear of the topmost tick."""
+        return self.plot_top - UNIT_GAP
+
+    @property
+    def clock_y(self) -> float:
+        """Baseline for the clock ticks, below the axis."""
+        return self.plot_bottom + CLOCK_ROW
+
+    @property
+    def zone_y(self) -> float:
+        """Baseline for the timezone caption, below the clock ticks."""
+        return self.plot_bottom + ZONE_ROW
 
     @property
     def has_data(self) -> bool:
@@ -329,13 +359,23 @@ def _latency_ticks(max_latency: int, y_for: Callable[[int], float]) -> tuple[Tic
 def _time_ticks(
     results: Sequence[CheckResult], x_for: Callable[[datetime], float]
 ) -> tuple[Tick, ...]:
-    """Oldest, middle and newest, as a wall clock."""
+    """Oldest, middle and newest, as a wall clock.
+
+    The outermost labels anchor inward. Centred on the plot edges they would overhang the
+    viewBox and lose a character at each end.
+    """
     moments = [results[0].checked_at, results[len(results) // 2].checked_at, results[-1].checked_at]
     seen: dict[float, Tick] = {}
-    for moment in moments:
+    for index, moment in enumerate(moments):
         position = round(x_for(moment), 2)
-        seen[position] = Tick(position=position, label=format_clock(moment))
-    return tuple(seen.values())
+        anchor = ("start", "middle", "end")[index]
+        seen[position] = Tick(position=position, label=format_clock(moment), anchor=anchor)
+
+    ticks = list(seen.values())
+    if len(ticks) == 1:
+        # A single reading sits at the left edge, where centring would overhang.
+        ticks[0] = Tick(position=ticks[0].position, label=ticks[0].label, anchor="start")
+    return tuple(ticks)
 
 
 def _time_span(results: Sequence[CheckResult]) -> float:

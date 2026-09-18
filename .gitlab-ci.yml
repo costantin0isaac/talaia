@@ -150,10 +150,30 @@ production:
     GIT_STRATEGY: none          # the checkout that matters is the one in TALAIA_DIR
   script:
     - cd "${TALAIA_DIR:-/opt/talaia}"
+    # Fetch over HTTPS with the job's own token rather than whatever key happens to be on
+    # the host: the runner user does not need an SSH key, and the token dies with the job.
+    - |
+      git fetch --prune \
+        "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" \
+        "+refs/heads/*:refs/remotes/origin/*" "+refs/tags/*:refs/tags/*"
     # A hard reset, never a pull: it is what guarantees the host matches the repository
-    # even if someone edited a file in place.
-    - git fetch --prune origin
+    # even if someone edited a file in place. A tag pipeline deploys that exact tag.
     - git reset --hard "${CI_COMMIT_TAG:-origin/$CI_DEFAULT_BRANCH}"
+    - docker login -u gitlab-ci-token -p "$CI_JOB_TOKEN" "$CI_REGISTRY"
     - docker compose -f compose.prod.yaml pull
     - docker compose -f compose.prod.yaml up -d
-    - docker compose -f compose.prod.yaml ps
+    # Fail the deploy if it does not come up, so a red job means a broken release rather
+    # than a job that merely finished. /readyz is non-200 until the database answers.
+    - |
+      for attempt in $(seq 30); do
+        if curl -fsS -o /dev/null "http://127.0.0.1:${TALAIA_PORT:-9999}/readyz"; then
+          echo "talaia: ready after ${attempt} attempt(s)"
+          exit 0
+        fi
+        sleep 2
+      done
+      echo "talaia: did not become ready" >&2
+      docker compose -f compose.prod.yaml logs --tail 50 app >&2
+      exit 1
+  after_script:
+    - docker logout "$CI_REGISTRY" || true

@@ -78,18 +78,54 @@ at, and it is what makes the session cookie Secure. Add the proxy's address to
 
 ### Deploying from CI
 
-Once the host checkout exists, `main` and tag pipelines carry a manual `production` job.
-Pressing it runs the upgrade below on the Docker host, so a deploy is a button rather than
-four remembered commands.
+`main` and tag pipelines carry a manual `production` job. Pressing it fetches the new
+revision on the Docker host, pulls the image, restarts the stack and waits for `/readyz` —
+so a red job means a broken release, not merely a job that finished.
 
-It needs two things on the GitLab side:
+It uses the pipeline's own `CI_JOB_TOKEN` for both git and the registry, so the runner
+needs no SSH key and no stored registry credentials.
 
-- a **shell-executor runner** on the Docker host, tagged `shell`
-- two CI/CD variables: `TALAIA_DIR` (default `/opt/talaia`) and `TALAIA_URL` for the
-  environment link
+Setting it up, once:
 
-The job is `when: manual` deliberately. The pipeline says the image is good; a person says
-now is a good time.
+**1. Tag the runner.** The job wants a shell-executor runner on the Docker host tagged
+`shell`. In GitLab: **Settings → CI/CD → Runners**, edit the runner, add the tag.
+
+**2. Let the runner use Docker.**
+
+```sh
+sudo usermod -aG docker gitlab-runner
+sudo systemctl restart gitlab-runner
+```
+
+**3. Share the deployment directory.** It is owned by you and written by the runner, so
+give both a group and make new files inherit it:
+
+```sh
+sudo groupadd -f talaia
+sudo usermod -aG talaia gitlab-runner
+sudo usermod -aG talaia "$USER"
+sudo chown -R "$USER":talaia /opt/talaia
+sudo chmod -R g+rwX /opt/talaia
+sudo find /opt/talaia -type d -exec chmod g+s {} +
+sudo chmod 640 /opt/talaia/.env
+```
+
+**4. Let git work in a directory it does not own.** Without this, git refuses with
+"detected dubious ownership" and the job fails on its first command:
+
+```sh
+sudo -u gitlab-runner git config --global --add safe.directory /opt/talaia
+```
+
+**5. Add the CI/CD variables.** **Settings → CI/CD → Variables**, both unprotected so tag
+pipelines can see them:
+
+| Key | Value |
+|---|---|
+| `TALAIA_DIR` | `/opt/talaia` |
+| `TALAIA_URL` | the public URL, for the environment link |
+
+Log out and back in for the group changes to apply to your own shell.
 
 ### Reloading the configuration from CI
 

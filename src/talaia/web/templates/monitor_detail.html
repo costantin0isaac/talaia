@@ -117,10 +117,10 @@
     <tbody>
       {% for incident in detail.incidents %}
       <tr {% if incident.ongoing %}class="ongoing"{% endif %}>
-        <td>{{ incident.started_at }}</td>
-        <td>{{ incident.resolved_at }}</td>
-        <td>{{ incident.duration }}{% if incident.ongoing %} and counting{% endif %}</td>
-        <td>{{ incident.cause }}</td>
+        <td data-label="Started">{{ incident.started_at }}</td>
+        <td data-label="Resolved">{{ incident.resolved_at }}</td>
+        <td data-label="Duration">{{ incident.duration }}{% if incident.ongoing %} and counting{% endif %}</td>
+        <td data-label="Cause">{{ incident.cause }}</td>
       </tr>
       {% endfor %}
     </tbody>

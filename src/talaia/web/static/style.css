@@ -122,6 +122,8 @@ code { font-family: var(--mono); font-size: 0.9em; }
 }
 .stat {
   flex: 1 1 120px; padding: 12px 16px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; text-align: center;
   background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius);
 }
 .stat-value { display: block; font-size: 1.5em; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -224,7 +226,7 @@ code { font-family: var(--mono); font-size: 0.9em; }
 /* Chart ------------------------------------------------------------------- */
 
 .chart {
-  width: 100%; height: 200px;
+  width: 100%; height: 220px;
   background: var(--bg-sunken); border-radius: var(--radius);
 }
 .chart-axis { stroke: var(--border); stroke-width: 1; }
@@ -233,12 +235,13 @@ code { font-family: var(--mono); font-size: 0.9em; }
   fill: var(--text-muted); font-family: var(--mono); font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
+/* The x ticks carry their own anchor, since the outermost two point inward. */
 .chart-tick-y { text-anchor: end; dominant-baseline: middle; }
-.chart-tick-x { text-anchor: middle; }
 .chart-axis-label {
   fill: var(--text-muted); font-family: var(--mono); font-size: 9px;
   letter-spacing: 0.06em; text-anchor: end;
 }
+.chart-axis-label-x { text-anchor: end; }
 .chart-line { fill: none; stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .chart-point { fill: var(--accent); }
 .chart-failure { stroke: var(--down); stroke-width: 1; opacity: 0.55; }

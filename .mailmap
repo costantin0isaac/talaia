@@ -1,0 +1,6 @@
+# Canonicalises author identities when git displays them. Nothing is rewritten: the commit
+# objects and their hashes are untouched, and git substitutes the name at display time in
+# git log, git shortlog and git blame.
+#
+# 56 commits were authored as "Isaac" and 32 as "isaac", from the same address.
+Isaac Costantino <isaac@costantino.es>

@@ -1,6 +1,11 @@
 # Project specification, kept out of the public repository.
 TALAIA.md
 
+# Deployment guide, withheld until the things it documents exist: a published image, a
+# release bundle to download, and the public GitHub repository its URLs point at. It
+# currently describes a deployment nobody can perform. Untrack, do not delete.
+docs/deployment.md
+
 # Secrets
 .env
 *.env

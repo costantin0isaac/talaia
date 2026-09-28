@@ -9,45 +9,29 @@
 
 ---
 
-A small, self-hosted uptime monitor for a homelab. It checks a set of targets on a schedule,
-records every result, tracks incidents, exposes Prometheus metrics, serves a read-only
-dashboard, and pushes a notification to your phone when something goes down or comes back.
+A small, self-hosted uptime monitor for your devices and services.
+Schedule target checks, record results, track incidents, expose metrics to prometheus, push notifications.
 
-Think of it as a deliberately smaller, more opinionated Uptime Kuma, with one difference
-that shapes everything else.
 
-## Monitors live in git, not in a web UI
+## Monitor configuration is a YAML file
 
-Monitor configuration is a YAML file in this repository. The database stores **state and
-history only** — never configuration typed in by a human.
+Configure your monitor targets in a single YAML file.
+This offers some benefits if working with IaC and CI pipelines:
+Configuration is reviewable, diffable and revertible, set up CI pipelines to fail on typos or other errors.
 
-<p align="center">
-  <img src="docs/images/architecture-vertical.png" alt="edit monitors.yaml, commit, push, CI validates the schema, deploy, Talaia reconciles the database" width="520">
-</p>
-
-The benefits are the ordinary benefits of infrastructure-as-code: the configuration is
-reviewable, diffable and revertible, and a typo like `intervall:` fails the pipeline instead
-of silently applying a default.
-
-On startup — and on `POST /api/reload` — Talaia reconciles the file against the database in
-a single transaction. A monitor that changes keeps its id, its history and any open
-incident. A monitor removed from the file is soft-deleted, never dropped. **An invalid file
-is rejected without disturbing the monitoring that is currently working.**
 
 ## What it does
 
 | | |
 |---|---|
 | **Four check types** | HTTP, ICMP, TCP, and TLS certificate expiry |
-| **Incidents, not alerts** | Consecutive-failure and recovery thresholds, so one dropped packet is not an outage |
-| **Push notifications** | ntfy, on state changes only — a six-hour outage sends exactly two messages |
-| **Prometheus metrics** | `/metrics` for scraping, plus a Grafana dashboard and alerting rules in this repo |
-| **A dashboard** | Server-rendered, HTMX-polled per row, no build step and no CDN |
-| **Session auth** | argon2 passwords, opaque session tokens, users created from the CLI |
+| **Incidents** | Consecutive-failure and recovery thresholds |
+| **Push notifications** | Uses ntfy on state change (failure, recovery) |
+| **Prometheus metrics** | `/metrics` for scraping. Grafana dashboard in this repo |
+| **A dashboard** | Server-rendered, HTMX-polled per row |
+| **Session auth** | Session tokens, users created from CLI only|
 | **Retention that keeps history** | Raw results are pruned; daily rollups and incidents are permanent |
 
-Deliberately out of scope: multi-tenancy, remote probes, high availability, databases other
-than PostgreSQL, SSO, editing monitors through the UI, and headless-browser checks.
 
 ## Getting it running
 
@@ -57,8 +41,7 @@ cp .env.example .env
 docker compose -f compose.dev.yaml up --build
 ```
 
-That starts Talaia and a PostgreSQL container. Migrations run before the server binds, so
-the schema is never behind the code.
+That starts Talaia and a PostgreSQL container.
 
 Create a user — there is no sign-up page:
 
@@ -126,16 +109,13 @@ There are deliberately **no** `POST`/`PUT`/`DELETE` endpoints for monitors.
 
 ## Documentation
 
-| | |
-|---|---|
-| [Configuration](docs/configuration.md) | every setting, notifications, sign-in, certificate checks |
-| [Deployment](docs/deployment.md) | running it for real, and wiring up Prometheus and Grafana |
-| [How it works](docs/internals.md) | the dashboard, retention, and troubleshooting |
-| [Development](docs/development.md) | tests, linting, and the conventions used here |
+[Configuration](docs/configuration.md) 
+[Deployment](docs/deployment.md)
+
 
 ## Built with
 
-Python 3.14, FastAPI, async SQLAlchemy, PostgreSQL, Alembic, Jinja2, HTMX, Prometheus,
+Python, FastAPI, async SQLAlchemy, PostgreSQL, Alembic, Jinja2, HTMX, Prometheus,
 and ntfy. Managed with `uv`, tested with `pytest` against a real PostgreSQL via
 testcontainers, and deployed from GitLab CI.
 

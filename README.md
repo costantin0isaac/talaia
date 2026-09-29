@@ -36,7 +36,7 @@ Configuration is reviewable, diffable and revertible, set up CI pipelines to fai
 ## Getting it running
 
 ```sh
-git clone <this-repo> talaia && cd talaia
+git clone https://github.com/costantin0isaac/talaia.git talaia && cd talaia
 cp .env.example .env
 docker compose -f compose.dev.yaml up --build
 ```
@@ -110,7 +110,6 @@ There are deliberately **no** `POST`/`PUT`/`DELETE` endpoints for monitors.
 ## Documentation
 
 [Configuration](docs/configuration.md) 
-[Deployment](docs/deployment.md)
 
 
 ## Built with

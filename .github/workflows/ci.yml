@@ -57,9 +57,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: |
-          docker run --rm -v "$PWD:/repo" -w /repo \
+          docker run --rm -v "$PWD:/repo" -w /repo --entrypoint promtool \
             prom/prometheus:v3.14.0 \
-            promtool check rules prometheus/talaia-rules.yml
+            check rules prometheus/talaia-rules.yml
 
 
   config:

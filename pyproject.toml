@@ -27,7 +27,7 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://gitlab.costantino.es/isaac/talaia"
+Repository = "https://github.com/costantin0isaac/talaia"
 
 [dependency-groups]
 dev = [

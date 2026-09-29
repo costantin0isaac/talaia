@@ -1,0 +1,40 @@
+name: CI
+
+on: [push]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+
+    - uses: astral-sh/setup-uv@v10.2.0
+      with:
+        enable-cache: true
+    
+    - run: uv sync --frozen --all-groups
+
+    - run: uv run ruff check .
+    - run: uv run ruff format --check .
+  
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+    - uses: astral-sh/setup-uv@v10.2.0
+      with:
+        enable-cache: true
+    - run: uv sync --frozen --all-groups
+    - run: uv run mypy
+
+  
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+    - uses: astral-sh/setup-uv@v10.2.0
+      with:
+        enable-cache: true
+    - run: uv sync --frozen --all-groups
+    - run: uv run pytest -m "not integration" --cov --cov-report=term

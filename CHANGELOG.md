@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.3.1] - 2026-10-08
+
+No changes to Talaia codebase.
+
+### Added
+
+- A published container image at `ghcr.io/costantin0isaac/talaia`, built for
+  `linux/amd64` and `linux/arm64`.
+- A deploy bundle attached to the release: the compose file, the example settings
+  and monitor list, the backup script, the Prometheus alerting rules and the Grafana
+  dashboard.
+
+
 ## [1.3.0] - 2026-09-18
 
 ### Added

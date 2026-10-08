@@ -83,7 +83,7 @@ jobs:
       - run: uv run pytest -m integration
   
   image:
-    needs: [list, typecheck, test, secrets, rules, config, integration]
+    needs: [lint, typecheck, test, secrets, rules, config, integration]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

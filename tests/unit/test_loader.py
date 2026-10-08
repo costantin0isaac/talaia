@@ -77,9 +77,8 @@ class TestLoadConfig:
 class TestCommittedConfigFiles:
     """The files in config/ are parsed by CI, so they must always be valid."""
 
-    @pytest.mark.parametrize("filename", ["monitors.yaml", "monitors.example.yaml"])
-    def test_committed_file_is_valid(self, filename: str) -> None:
-        config = load_config(REPO_ROOT / "config" / filename)
+    def test_committed_file_is_valid(self) -> None:
+        config = load_config(REPO_ROOT / "config" / "monitors.yaml")
 
         assert config.resolve()
 

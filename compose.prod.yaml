@@ -1,8 +1,4 @@
 # Production deployment. See the README, "Deploying".
-#
-# The image comes from the GitLab registry rather than being built here, so what runs is
-# exactly what CI tested. Set TALAIA_IMAGE and TALAIA_TAG in .env alongside the secrets.
-
 name: talaia
 
 services:
@@ -11,12 +7,9 @@ services:
     env_file: .env
     environment:
       TALAIA_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-talaia}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-talaia}
-      # Defaults to the git-ignored monitors.local.yaml so that `git reset --hard` on
-      # upgrade cannot overwrite the real monitor list with the placeholder one.
       TALAIA_CONFIG_PATH: ${TALAIA_CONFIG_PATH:-/app/config/monitors.local.yaml}
     ports:
-      # Published on the host because Caddy runs on a different machine; container-to-
-      # container DNS does not cross hosts.
+      # Published port because I run my http server on a different machine, you might not need it
       - "9999:9999"
     volumes:
       - ${TALAIA_CONFIG_DIR:-./config}:/app/config:ro
@@ -24,7 +17,6 @@ services:
       db:
         condition: service_healthy
     # Unprivileged ICMP needs the kernel to allow this GID range to open ping sockets.
-    # Without it every icmp monitor fails with a permission error.
     sysctls:
       net.ipv4.ping_group_range: "0 2147483647"
     restart: unless-stopped
@@ -42,7 +34,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-talaia}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-    # Deliberately no published port: nothing outside this stack talks to the database.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-talaia} -d ${POSTGRES_DB:-talaia}"]
       interval: 10s
@@ -56,8 +47,6 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # Dumps the database on a schedule. Shares the db image so pg_dump always matches the
-  # server version, and the socket never leaves the stack.
   backup:
     image: postgres:17-alpine
     depends_on:

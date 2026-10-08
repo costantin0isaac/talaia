@@ -169,26 +169,6 @@ Name the proxy:
 TALAIA_PROXY_IPS=10.0.0.6          # comma-separated for several, or * for any
 ```
 
-### How it is built
-
-| Concern | Choice |
-|---|---|
-| Password storage | argon2id, library defaults, minimum 12 characters |
-| Session token | 256 random bits, `SHA-256` hashed before storage |
-| Cookie | `HttpOnly`, `SameSite=Lax`, `Secure` (configurable) |
-| Expiry | `TALAIA_SESSION_TTL_HOURS`, default 30 days, absolute |
-
-Only the *hash* of a session token is stored, so a copy of the `sessions` table cannot be
-replayed as a set of live logins. 
-
-The expiry and the user's `active` flag are both part of the session lookup query, so a
-disabled account loses its open sessions immediately and no cleanup step can be forgotten.
-Changing a password deletes that user's sessions outright. Expired rows are swept by the
-hourly retention task.
-
-Failed logins do not say whether the username or the password was wrong, and an unknown
-username is still checked against a dummy hash so the two paths take the same time.
-
 ### Using the API from a script
 
 The API takes the same cookie, so `curl` needs a cookie jar:

@@ -33,7 +33,19 @@ Configuration is reviewable, diffable and revertible, set up CI pipelines to fai
 | **Retention that keeps history** | Raw results are pruned; daily rollups and incidents are permanent |
 
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/images/screenshot-dashboard.png" alt="Talaia dashboard: monitors grouped by role, with uptime strips and latency" width="900">
+</p>
+
+<p align="center">
+  <img src="docs/images/screenshot-monitor.png" alt="Monitor detail: uptime windows, latency chart and incident history" width="900">
+</p>
+
 ## Getting it running
+
+This runs Talaia on your own machine. For a server, see [Deployment](docs/deployment.md).
 
 ```sh
 git clone https://github.com/costantin0isaac/talaia.git talaia && cd talaia
@@ -53,44 +65,14 @@ Then open <http://localhost:9999> and sign in.
 
 ### Configure some monitors
 
-`config/monitors.yaml` ships with placeholder targets. Point it at things you actually run:
-
-```yaml
-defaults:
-  interval: 60              # seconds between checks
-  timeout: 10               # must be strictly less than the interval
-  failure_threshold: 3      # consecutive failures before the state becomes DOWN
-  recovery_threshold: 2     # consecutive successes before it becomes UP
-
-monitors:
-  - name: open-webui
-    type: http
-    target: http://10.0.0.10:3001
-    group: services
-    http:
-      expected_status: [200]
-
-  - name: proxmox-node
-    type: icmp
-    target: 10.0.0.2
-    group: infra
-
-  - name: gitlab-ssh
-    type: tcp
-    target: 10.0.0.20:22
-
-  - name: my-certificate
-    type: tls
-    target: example.org       # port defaults to 443
-    interval: 3600
-    tls:
-      warn_days: 14           # fail once fewer than this many days remain
-```
+`config/monitors.yaml` ships with placeholder targets and doubles as the worked example:
+one monitor of each type, with the options commented. Point it at things you actually run.
+Every setting is in [Configuration](docs/configuration.md).
 
 Unknown keys are a hard error, not a warning. Validate before committing:
 
 ```sh
-uv run python -m talaia.config config/monitors.yaml
+docker compose -f compose.dev.yaml exec app python -m talaia.config config/monitors.yaml
 ```
 
 ### Endpoints
@@ -109,7 +91,8 @@ There are deliberately **no** `POST`/`PUT`/`DELETE` endpoints for monitors.
 
 ## Documentation
 
-[Configuration](docs/configuration.md) 
+[Configuration](docs/configuration.md)  
+[Deployment](docs/deployment.md)
 
 
 ## Built with

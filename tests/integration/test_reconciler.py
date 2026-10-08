@@ -218,11 +218,14 @@ class TestRealConfigFile:
     async def test_the_committed_config_reconciles(self, session: AsyncSession) -> None:
         report = await reconcile_file(session, Path("config/monitors.yaml"))
 
-        assert len(report.inserted) == 3
+        assert len(report.inserted) == 5
+        # Ordered by group then name; example-disabled has no group, so it sorts last.
         assert [m.name for m in await repo.list_monitors(session)] == [
+            "example-certificate",
             "example-router",
             "example-ssh",
             "example-webapp",
+            "example-disabled",
         ]
 
 

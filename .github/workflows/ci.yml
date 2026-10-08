@@ -70,7 +70,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --frozen --all-groups
-      - run: uv run python -m talaia.config config/monitors.yaml config/monitors.example.yaml
+      - run: uv run python -m talaia.config config/monitors.yaml
 
   integration:
     runs-on: ubuntu-latest
@@ -131,15 +131,12 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
-
-      # Only what is needed to run Talaia: the stack, the settings, and the two
-      # monitoring files. Not the source, which the repository already carries.
       - name: Assemble the deploy bundle
         run: |
           dir="talaia-${{ github.ref_name }}"
           mkdir -p "$dir"/config "$dir"/scripts "$dir"/prometheus "$dir"/grafana
           cp compose.prod.yaml .env.example "$dir"/
-          cp config/monitors.example.yaml "$dir"/config/
+          cp config/monitors.yaml "$dir"/config/
           cp scripts/backup.sh "$dir"/scripts/
           cp prometheus/talaia-rules.yml "$dir"/prometheus/
           cp grafana/talaia-dashboard.json "$dir"/grafana/
